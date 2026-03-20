@@ -1,0 +1,108 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model audit_logs {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?  @db.Uuid
+  success    Boolean
+  action     String
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model auth_logs {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String?  @db.Uuid
+  success    Boolean
+  action     String
+  ip         String?
+  user_agent String?
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model companies {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  created_at DateTime   @default(now()) @db.Timestamp(6)
+  vouchers   vouchers[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model spreadsheets {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String
+  file_url   String
+  user_id    String?    @db.Uuid
+  created_at DateTime   @default(now()) @db.Timestamp(6)
+  analysis   analysis[]
+  users      users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model support {
+  id         Int      @id @default(autoincrement())
+  user_id    String?  @db.Uuid
+  message    String
+  complete   Boolean  @default(false)
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model users {
+  id           String         @id @db.Uuid
+  rut          String         @unique @db.VarChar(9)
+  name         String
+  last_name    String
+  email        String         @unique
+  tel          String?        @db.VarChar(9)
+  is_allowed   Boolean        @default(true)
+  is_admin     Boolean        @default(false)
+  analysis     analysis[]
+  audit_logs   audit_logs[]
+  auth_logs    auth_logs[]
+  spreadsheets spreadsheets[]
+  support      support[]
+  vouchers     vouchers[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model vouchers {
+  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  voucher_number     String
+  voucher_date       DateTime   @db.Date
+  voucher_company_id String?    @db.Uuid
+  user_id            String?    @db.Uuid
+  created_at         DateTime   @default(now()) @db.Timestamp(6)
+  file_path          String?
+  ai_success         Boolean?
+  users              users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies          companies? @relation(fields: [voucher_company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model analysis {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  spreadsheet_id String       @db.Uuid
+  user_id        String       @db.Uuid
+  start_date     DateTime     @db.Date
+  end_date       DateTime     @db.Date
+  start_page     Int          @db.SmallInt
+  end_page       Int          @db.SmallInt
+  error_count    BigInt?      @default(0)
+  user_feedback  Boolean?
+  created_at     DateTime     @default(now()) @db.Timestamptz(6)
+  exec_time      Decimal      @db.Decimal
+  spreadsheets   spreadsheets @relation(fields: [spreadsheet_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users          users        @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
