@@ -42,6 +42,14 @@ export default async function DefineAnalysisPage({ searchParams }) {
     redirect('/dashboard/analysis/model')
   }
 
+  // Traer mundos excluyendo los solicitados
+  const companies = await prisma.companies.findMany({
+    where: {
+      name: { notIn: ['BASE AEROPUERTO', 'TRIPULACION'] }
+    },
+    orderBy: { name: 'asc' }
+  })
+
   return (
     <main className="container py-5" style={{ maxWidth: '800px' }}>
       <header className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
@@ -56,7 +64,7 @@ export default async function DefineAnalysisPage({ searchParams }) {
           Estás configurando el análisis para la planilla: <strong>{spreadsheet.name}</strong>
         </div>
         
-        <DefineForm spreadsheetId={spreadsheet.id} />
+        <DefineForm spreadsheetId={spreadsheet.id} companies={companies} />
       </section>
     </main>
   )

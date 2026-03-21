@@ -4,14 +4,12 @@ import { useState } from 'react'
 import { requestPasswordReset } from '@/app/actions/auth'
 import Link from 'next/link'
 
-export const metadata = {
-  title: 'Recuperar contraseña | VanCheck',
-};
-
 export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
+
+  document.title = 'Olvidaste tu contraseña | VanCheck';
 
   const handleSubmit = async (e) => {
     e.preventDefault()

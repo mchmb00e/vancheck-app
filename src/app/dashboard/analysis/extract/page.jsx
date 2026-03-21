@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown } from 'react-bootstrap-icons'
+import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye } from 'react-bootstrap-icons'
 import { submitAnalysisFeedback } from '@/app/actions/analysis' 
+import { getVoucherImageUrl } from '@/app/actions/voucher' // Importamos la acción para la URL de la imagen
 
 export default function ExtractViewPage() {
   const [analisis, setAnalisis] = useState(null)
   const [loading, setLoading] = useState(true)
   const [feedbackStatus, setFeedbackStatus] = useState('pending')
+  const [imageLoadingId, setImageLoadingId] = useState(null) // Para mostrar que está cargando el enlace
 
   useEffect(() => {
     const storedData = sessionStorage.getItem('extractedData')
@@ -29,6 +31,25 @@ export default function ExtractViewPage() {
       setFeedbackStatus('done')
     } catch (err) {
       setFeedbackStatus('pending')
+    }
+  }
+
+  // Función para obtener y abrir la imagen
+  const handleViewVoucher = async (id, filePath) => {
+    if (!filePath) return
+    
+    setImageLoadingId(id)
+    try {
+      const url = await getVoucherImageUrl(filePath)
+      if (url) {
+        window.open(url, '_blank')
+      } else {
+        alert('No se pudo cargar la imagen. Es posible que el archivo ya no exista.')
+      }
+    } catch (error) {
+      alert('Hubo un error al intentar abrir la imagen.')
+    } finally {
+      setImageLoadingId(null)
     }
   }
 
@@ -84,11 +105,12 @@ export default function ExtractViewPage() {
                 Estos viajes están registrados en tu sistema dentro del rango de fechas, pero <strong>no aparecen en el PDF</strong>. ¡Reclama este pago!
               </p>
               <div className="table-responsive">
-                <table className="table table-hover table-bordered mb-0 bg-white">
+                <table className="table table-hover table-bordered mb-0 bg-white align-middle">
                   <thead className="table-light">
                     <tr>
                       <th>ID Viaje</th>
                       <th>Fecha</th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -96,6 +118,31 @@ export default function ExtractViewPage() {
                       <tr key={i}>
                         <td className="fw-bold text-danger">{v.voucher_number}</td>
                         <td>{new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}</td>
+                        <td>
+                          {v.file_path ? (
+                            <button 
+                              onClick={() => handleViewVoucher(v.id, v.file_path)}
+                              disabled={imageLoadingId === v.id}
+                              className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2"
+                            >
+                              {imageLoadingId === v.id ? (
+                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                              Ver voucher
+                            </button>
+                          ) : (
+                            <div className="d-flex align-items-center gap-2">
+                              <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2" disabled>
+                                <Eye size={16} /> Ver voucher
+                              </button>
+                              <small className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                No se proporcionó una imagen de este voucher
+                              </small>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -32,7 +32,7 @@ const getMidY = (token) => {
   return (Math.min(...ys) + Math.max(...ys)) / 2
 }
 
-export async function processSpreadsheetAnalysis(spreadsheetId, startDateStr, endDateStr, startPage = 2, endPage = null) {
+export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, startPage = 2, endPage = null) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
@@ -53,17 +53,41 @@ export async function processSpreadsheetAnalysis(spreadsheetId, startDateStr, en
       }
     })
 
-    const startDate = new Date(`${startDateStr}T00:00:00Z`)
-    const endDate = new Date(`${endDateStr}T23:59:59Z`)
+    // Calcular límites globales para optimizar la consulta a la BD
+    let globalStartDate = new Date('2099-01-01T00:00:00Z')
+    let globalEndDate = new Date('1970-01-01T00:00:00Z')
+    const parsedDates = {}
 
-    const userVouchers = await prisma.vouchers.findMany({
+    for (const [compId, dates] of Object.entries(companyDates)) {
+      const start = new Date(`${dates.start}T00:00:00Z`)
+      const end = new Date(`${dates.end}T23:59:59Z`)
+      parsedDates[compId] = { start, end }
+
+      if (start < globalStartDate) globalStartDate = start
+      if (end > globalEndDate) globalEndDate = end
+    }
+
+    // Traer vouchers usando el rango global
+    const rawVouchers = await prisma.vouchers.findMany({
       where: {
         user_id: user.id,
         voucher_date: {
-          gte: startDate,
-          lte: endDate
+          gte: globalStartDate,
+          lte: globalEndDate
         }
       }
+    })
+
+    // Filtrar estrictamente por el rango de cada mundo
+    const userVouchers = rawVouchers.filter(v => {
+      // Si no tiene mundo o es un mundo excluido (no mapeado), lo aceptamos dentro del límite global
+      if (!v.voucher_company_id) return true;
+      
+      const compDate = parsedDates[v.voucher_company_id]
+      if (compDate) {
+        return v.voucher_date >= compDate.start && v.voucher_date <= compDate.end
+      }
+      return true; 
     })
 
     const startTime = Date.now()
@@ -206,8 +230,8 @@ export async function processSpreadsheetAnalysis(spreadsheetId, startDateStr, en
       data: {
         spreadsheet_id: spreadsheetId,
         user_id: user.id,
-        start_date: startDate,
-        end_date: endDate,
+        start_date: globalStartDate,
+        end_date: globalEndDate,
         start_page: startPage,
         end_page: loopEnd,
         error_count: missingInPlanilla.length,
@@ -227,6 +251,7 @@ export async function processSpreadsheetAnalysis(spreadsheetId, startDateStr, en
   }
 }
 
+// ¡Acá está la que se te había borrado!
 export async function submitAnalysisFeedback(analysisId, isConforme) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

@@ -3,13 +3,11 @@
 import { useState } from 'react'
 import { updatePassword } from '@/app/actions/auth'
 
-export const metadata = {
-  title: 'Actualizar contraseña | VanCheck',
-};
-
 export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+
+  document.title = 'Actualizar contraseña | VanCheck';
 
   const handleSubmit = async (e) => {
     e.preventDefault()

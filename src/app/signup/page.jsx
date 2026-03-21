@@ -5,13 +5,11 @@ import { signUp } from '@/app/actions/auth'
 import Link from 'next/link'
 import Image from 'next/image'
 
-export const metadata = {
-  title: 'Registrarse | VanCheck',
-};
-
 export default function SignupPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [loading, setLoading] = useState(false)
+
+  document.title = 'Registrarse | VanCheck';
 
   const handleSubmit = async (e) => {
     e.preventDefault()
