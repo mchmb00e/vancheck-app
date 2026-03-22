@@ -24,7 +24,7 @@ export async function submitVoucher(formData) {
   if (isManual) {
     const id = crypto.randomUUID()
     const dateInput = formData.get('date')
-    
+
     await prisma.vouchers.create({
       data: {
         id: id,
@@ -40,11 +40,11 @@ export async function submitVoucher(formData) {
   }
 
   const files = formData.getAll('voucherImage')
-  
+
   if (files.length === 0 || files[0].size === 0) {
     throw new Error('Falta la imagen del voucher')
   }
-  
+
   if (files.length > 1) {
     throw new Error('Solo puedes subir una imagen a la vez.')
   }
@@ -91,12 +91,12 @@ export async function submitVoucher(formData) {
   let isDuplicate = false
   if (extractedId) {
     const existingVoucher = await prisma.vouchers.findFirst({
-      where: { 
+      where: {
         voucher_number: extractedId,
-        user_id: user.id 
+        user_id: user.id
       }
     })
-    
+
     if (existingVoucher) {
       isDuplicate = true
       await logAuditAction(user.id, true, `duplicate voucher ${extractedId}`)
@@ -105,7 +105,7 @@ export async function submitVoucher(formData) {
 
   const dateMatch = text.match(/(\d{2})\s*[\/\-]\s*(\d{2})\s*[\/\-]\s*(\d{4})/)
   let extractedDate;
-  
+
   if (dateMatch) {
     extractedDate = new Date(`${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}T12:00:00Z`)
   } else {
@@ -126,9 +126,12 @@ export async function submitVoucher(formData) {
     'RBU': ['redbus', 'red bus', 'red_bus'],
     'REDSUPPORT': ['red support', 'red_support'],
     'AGUNSA': ['agunsa_aeropuerto', 'agunsa_ae', 'agunsa_aer'],
-    'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue'], 
-    'TRIPULACION': ['trip_aeropuerto', 'trip_aero', 'trip_aerop'],
-    'BASE AEROPUERTO': ['base aerof', 'base aerop', 'base aerot', 'base'],
+    'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue', 'acciona_aeropuerto'],
+    'LATAM': [
+      'latam',
+      'trip_aeropuerto', 'trip_aero', 'trip_aerop', 'tripulacion',
+      'base aerof', 'base aerop', 'base aerot', 'base', 'base aeropuerto'
+    ]
   }
 
   for (const comp of companies) {
@@ -191,16 +194,16 @@ export async function cancelAndRollbackVoucher(id, filePath) {
 
   try {
     const v = await prisma.vouchers.findUnique({ where: { id }, select: { voucher_number: true } })
-    
+
     await prisma.vouchers.delete({ where: { id } })
 
     if (filePath) {
       await supabase.storage.from('vancheck-bucket').remove([filePath])
     }
-    
+
     await logAuditAction(user.id, true, `voucher rollback ${v?.voucher_number}`)
-  } catch (error) {}
-  
+  } catch (error) { }
+
   redirect('/dashboard/voucher')
 }
 
@@ -223,7 +226,7 @@ export async function updateVoucherRecord(id, formData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const dateInput = formData.get('date')
-  
+
   await prisma.vouchers.update({
     where: { id },
     data: {
@@ -241,7 +244,7 @@ export async function getVoucherImageUrl(filePath) {
   if (!filePath) return null;
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  
+
   const voucher = await prisma.vouchers.findFirst({ where: { file_path: filePath }, select: { id: true } })
 
   const { data, error } = await supabase.storage

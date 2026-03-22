@@ -44,14 +44,7 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
     })
     if (!spreadsheet) throw new Error('Planilla no encontrada')
 
-    const companies = await prisma.companies.findMany({
-      where: {
-        AND: {
-          name: { not: 'TRIPULACION' },
-          name: { not: 'BASE AEROPUERTO' }
-        }
-      }
-    })
+    const companies = await prisma.companies.findMany()
 
     // Calcular límites globales para optimizar la consulta a la BD
     let globalStartDate = new Date('2099-01-01T00:00:00Z')
