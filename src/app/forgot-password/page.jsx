@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { requestPasswordReset } from '@/app/actions/auth'
 import Link from 'next/link'
 
@@ -9,7 +9,9 @@ export default function ForgotPasswordPage() {
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
 
-  document.title = 'Olvidaste tu contraseña | VanCheck';
+  useEffect(() => {
+    document.title = 'Olvidaste tu contraseña | VanCheck';
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault()

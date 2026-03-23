@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { signUp } from '@/app/actions/auth'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -9,7 +9,11 @@ export default function SignupPage() {
   const [errorMsg, setErrorMsg] = useState('')
   const [loading, setLoading] = useState(false)
 
-  document.title = 'Registrarse | VanCheck';
+
+
+  useEffect(() => {
+    document.title = 'Registrarse | VanCheck'; // El texto que tengas puesto ahí
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault()
