@@ -7,11 +7,13 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { revalidatePath } from 'next/cache'
 import { logAuditAction } from '@/app/actions/logs'
 
-/* Módulo de gestión de vouchers: controla la carga manual y automática mediante OCR (Document AI), validación de duplicados, edición, eliminación y auditoría de acciones. */
 
-export const maxDuration = 60;
-
-const documentAiClient = new DocumentProcessorServiceClient()
+const documentAiClient = new DocumentProcessorServiceClient({
+  credentials: {
+    client_email: process.env.GCP_CLIENT_EMAIL,
+    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  }
+})
 
 export async function submitVoucher(formData) {
   const supabase = await createClient()

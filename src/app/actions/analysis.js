@@ -6,11 +6,12 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { PDFDocument } from 'pdf-lib'
 import { logAuditAction } from '@/app/actions/logs'
 
-export const maxDuration = 60;
-
-/* Ejecuta el análisis de cruce de datos entre planillas PDF y vouchers del usuario utilizando Google Document AI, validando la extensión del documento y registrando resultados y feedback de auditoría. */
-
-const documentAiClient = new DocumentProcessorServiceClient()
+const documentAiClient = new DocumentProcessorServiceClient({
+  credentials: {
+    client_email: process.env.GCP_CLIENT_EMAIL,
+    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  }
+})
 
 const getTokenText = (token, fullText) => {
   const segments = token.layout?.textAnchor?.textSegments
@@ -70,7 +71,8 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
           gte: globalStartDate,
           lte: globalEndDate
         }
-      }
+      },
+      include: { companies: true }
     })
 
     // Filtrar estrictamente por el rango de cada mundo

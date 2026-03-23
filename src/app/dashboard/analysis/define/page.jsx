@@ -10,6 +10,8 @@ export const metadata = {
   title: 'Configuración | VanCheck',
 };
 
+export const maxDuration = 60;
+
 export default async function DefineAnalysisPage({ searchParams }) {
   const params = await searchParams
   const spreadsheetId = params?.id

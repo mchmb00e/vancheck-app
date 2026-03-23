@@ -8,6 +8,9 @@ export const metadata = {
   title: 'Añadir Voucher | VanCheck',
 };
 
+export const maxDuration = 60;
+
+
 export default async function IndividualVoucherPage() {
   const companies = await prisma.companies.findMany({
     orderBy: { name: 'asc' }

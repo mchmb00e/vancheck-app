@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, FileEarmarkPdfFill, Download } from 'react-bootstrap-icons'
+import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, FileEarmarkPdfFill, Download, FileEarmarkSpreadsheetFill } from 'react-bootstrap-icons'
 import { submitAnalysisFeedback, getSpreadsheetUrl, generateUnpaidVouchersPdf } from '@/app/actions/analysis' 
 import { getVoucherImageUrl } from '@/app/actions/voucher' 
+import * as XLSX from 'xlsx' // ✨ IMPORTAMOS LIBRERÍA DE EXCEL
 
 export default function ExtractViewPage() {
   const [analisis, setAnalisis] = useState(null)
@@ -12,12 +13,10 @@ export default function ExtractViewPage() {
   const [feedbackStatus, setFeedbackStatus] = useState('pending')
   const [imageLoadingId, setImageLoadingId] = useState(null)
   
-  // ✨ NUEVOS ESTADOS para los botones
   const [isOpeningSpreadsheet, setIsOpeningSpreadsheet] = useState(false)
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false)
 
   useEffect(() => {
-    // Almacenamos el análisis en sessionStorage al generarlo, acá lo recuperamos
     const storedData = sessionStorage.getItem('extractedData')
     if (storedData) {
       setAnalisis(JSON.parse(storedData))
@@ -53,7 +52,6 @@ export default function ExtractViewPage() {
     }
   }
 
-  // ✨ NUEVA FUNCIÓN: Abrir la planilla PDF original
   const handleOpenSpreadsheet = async () => {
     if (!analisis?.spreadsheetId) {
       alert("No se encontró la referencia a la planilla.")
@@ -71,22 +69,18 @@ export default function ExtractViewPage() {
     }
   }
 
-  // ✨ NUEVA FUNCIÓN: Generar y descargar PDF de vouchers faltantes
   const handleDownloadUnpaidPdf = async () => {
     if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
     
     setIsDownloadingPdf(true)
     try {
-      // Extraemos solo los IDs de la base de datos de los vouchers faltantes
       const missingIds = analisis.missingInPlanilla.map(v => v.id)
-      
       const response = await generateUnpaidVouchersPdf(missingIds)
       
       if (!response.success) {
         throw new Error(response.error || "Error desconocido al generar el PDF")
       }
 
-      // Convertimos el base64 de vuelta a un Blob para descargarlo
       const byteCharacters = atob(response.pdfBase64)
       const byteNumbers = new Array(byteCharacters.length)
       for (let i = 0; i < byteCharacters.length; i++) {
@@ -95,7 +89,6 @@ export default function ExtractViewPage() {
       const byteArray = new Uint8Array(byteNumbers)
       const blob = new Blob([byteArray], { type: 'application/pdf' })
       
-      // Creamos un enlace temporal para forzar la descarga
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
       link.download = `Vouchers_Faltantes_${new Date().toLocaleDateString('es-CL').replace(/\//g, '-')}.pdf`
@@ -108,6 +101,36 @@ export default function ExtractViewPage() {
     } finally {
       setIsDownloadingPdf(false)
     }
+  }
+
+  // ✨ NUEVA FUNCIÓN: Exportar a Excel
+  const handleExportExcel = () => {
+    if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
+
+    // 1. Armamos los datos exactos que pidió el compita (ID, FECHA, MUNDO)
+    const dataToExport = analisis.missingInPlanilla.map(v => ({
+      'ID': v.voucher_number,
+      'FECHA': new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' }),
+      'MUNDO': v.companies?.name || 'Sin mundo' // Acá usamos el dato que agregamos en el include de Prisma
+    }))
+
+    // 2. Convertimos el arreglo de JSON a una hoja de cálculo
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport)
+
+    // 3. Le damos un poco de estilo al ancho de las columnas
+    worksheet['!cols'] = [
+      { wch: 15 }, // Ancho para ID
+      { wch: 15 }, // Ancho para FECHA
+      { wch: 25 }  // Ancho para MUNDO
+    ]
+
+    // 4. Creamos el libro (Workbook) y le metemos la hoja
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Vouchers No Pagados")
+
+    // 5. Generamos el archivo .xlsx y forzamos la descarga
+    const fileName = `Detalle_Faltantes_${new Date().toLocaleDateString('es-CL').replace(/\//g, '-')}.xlsx`
+    XLSX.writeFile(workbook, fileName)
   }
 
   if (loading) {
@@ -138,7 +161,7 @@ export default function ExtractViewPage() {
         </Link>
       </header>
 
-      {/* ✨ NUEVA SECCIÓN DE BOTONES DE ACCIÓN RÁPIDA */}
+      {/* SECCIÓN DE BOTONES DE ACCIÓN RÁPIDA */}
       <div className="d-flex flex-wrap gap-3 mb-5 animate__animated animate__fadeIn">
         <button 
           onClick={handleOpenSpreadsheet} 
@@ -154,18 +177,29 @@ export default function ExtractViewPage() {
         </button>
 
         {!isPerfectMatch && analisis.missingInPlanilla.length > 0 && (
-          <button 
-            onClick={handleDownloadUnpaidPdf} 
-            disabled={isDownloadingPdf}
-            className="btn btn-danger shadow-sm d-flex align-items-center gap-2 fw-medium"
-          >
-            {isDownloadingPdf ? (
-              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-            ) : (
-              <Download size={18} />
-            )}
-            Descargar vouchers no pagados (PDF)
-          </button>
+          <>
+            <button 
+              onClick={handleDownloadUnpaidPdf} 
+              disabled={isDownloadingPdf}
+              className="btn btn-danger shadow-sm d-flex align-items-center gap-2 fw-medium"
+            >
+              {isDownloadingPdf ? (
+                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              ) : (
+                <Download size={18} />
+              )}
+              Descargar fotos (PDF)
+            </button>
+
+            {/* ✨ NUEVO BOTÓN DE EXCEL */}
+            <button 
+              onClick={handleExportExcel} 
+              className="btn btn-success shadow-sm d-flex align-items-center gap-2 fw-medium"
+            >
+              <FileEarmarkSpreadsheetFill size={18} />
+              Exportar tabla (.xlsx)
+            </button>
+          </>
         )}
       </div>
 
@@ -198,6 +232,7 @@ export default function ExtractViewPage() {
                     <tr>
                       <th>ID Viaje</th>
                       <th>Fecha</th>
+                      <th>Mundo</th>
                       <th>Acción</th>
                     </tr>
                   </thead>
@@ -206,6 +241,11 @@ export default function ExtractViewPage() {
                       <tr key={i}>
                         <td className="fw-bold text-danger">{v.voucher_number}</td>
                         <td>{new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}</td>
+                        <td>
+                          <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary-subtle">
+                            {v.companies?.name || 'Sin mundo'}
+                          </span>
+                        </td>
                         <td>
                           {v.file_path ? (
                             <button 
@@ -226,7 +266,7 @@ export default function ExtractViewPage() {
                                 <Eye size={16} /> Ver voucher
                               </button>
                               <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                No se proporcionó una imagen
+                                Sin imagen
                               </small>
                             </div>
                           )}
@@ -256,8 +296,8 @@ export default function ExtractViewPage() {
                     <tr>
                       <th>ID Viaje</th>
                       <th>Fecha PDF</th>
-                      <th>Monto Pagado</th>
                       <th>Mundo</th>
+                      <th>Monto Pagado</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -265,12 +305,12 @@ export default function ExtractViewPage() {
                       <tr key={i}>
                         <td className="fw-bold text-dark">{v.id_viaje}</td>
                         <td>{v.fecha}</td>
-                        <td className="text-success fw-medium">${v.monto}</td>
                         <td>
                           <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary-subtle">
                             {v.mundo || 'Sin mundo'}
                           </span>
                         </td>
+                        <td className="text-success fw-medium">${v.monto}</td>
                       </tr>
                     ))}
                   </tbody>

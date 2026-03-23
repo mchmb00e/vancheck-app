@@ -37,7 +37,7 @@ export async function proxy(request) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthRoute = ['/login', '/signup', '/forgot-password'].some(route => 
+  const isAuthRoute = ['/login', '/signup', '/forgot-password', '/terminos-y-condiciones'].some(route => 
     pathname.startsWith(route)
   )
   const isCallbackRoute = pathname.startsWith('/auth/callback')

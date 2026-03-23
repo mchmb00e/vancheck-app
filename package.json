@@ -27,7 +27,8 @@
     "react-bootstrap": "^2.10.10",
     "react-bootstrap-icons": "^1.11.6",
     "react-dom": "19.2.3",
-    "react-intersection-observer": "^10.0.3"
+    "react-intersection-observer": "^10.0.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "babel-plugin-react-compiler": "1.0.0",

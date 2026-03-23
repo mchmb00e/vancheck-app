@@ -4,7 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { processSingleMassiveVoucher, confirmMassiveBatch } from '@/app/actions/voucher'
-import imageCompression from 'browser-image-compression' // ✨ IMPORTAMOS LIBRERÍA
+import imageCompression from 'browser-image-compression' 
+import { Eye, Trash, ExclamationTriangleFill, Stopwatch } from 'react-bootstrap-icons'
 
 export default function MassiveClient({ companies }) {
   const router = useRouter()
@@ -20,6 +21,7 @@ export default function MassiveClient({ companies }) {
   const [isSaving, setIsSaving] = useState(false)
   
   const MAX_FILES = 300
+  const CONCURRENCY_LIMIT = 5 // Máximo 5 envíos a la vez a GCloud
 
   // ---------- PASO 1: SELECCIÓN ----------
   const handleFileChange = (e) => {
@@ -67,7 +69,6 @@ export default function MassiveClient({ companies }) {
     
     const results = []
     let currentIndex = 0
-    const CONCURRENCY_LIMIT = 5 // Máximo 5 envíos a la vez a GCloud
 
     const worker = async () => {
       while (currentIndex < files.length) {
@@ -75,7 +76,7 @@ export default function MassiveClient({ companies }) {
         const item = files[index]
         
         try {
-          // ✨ INICIO COMPRESIÓN DE IMAGEN
+          // INICIO COMPRESIÓN DE IMAGEN
           let fileToUpload = item.file
           try {
             const options = {
@@ -87,10 +88,9 @@ export default function MassiveClient({ companies }) {
           } catch (compErr) {
             console.error('Error al comprimir, subiendo original:', compErr)
           }
-          // ✨ FIN COMPRESIÓN
+          // FIN COMPRESIÓN
 
           const formData = new FormData()
-          // Mandamos el archivo comprimido
           formData.append('file', fileToUpload) 
           
           const res = await processSingleMassiveVoucher(formData)
@@ -164,6 +164,12 @@ export default function MassiveClient({ companies }) {
     }
   }
 
+  // CÁLCULO DE TIEMPO ESTIMADO (ETA)
+  const remainingItems = files.length - progress
+  const estimatedSecondsTotal = Math.ceil((remainingItems / CONCURRENCY_LIMIT) * 3)
+  const etaMinutes = Math.floor(estimatedSecondsTotal / 60)
+  const etaSeconds = estimatedSecondsTotal % 60
+
   return (
     <main className="container py-5" style={{ maxWidth: '1000px' }}>
       <header className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
@@ -178,8 +184,9 @@ export default function MassiveClient({ companies }) {
       {/* ----------- VISTA DE SELECCIÓN ----------- */}
       {step === 'SELECT' && (
         <section className="fade-in">
-          <div className="alert alert-warning d-flex align-items-center" role="alert">
-            <div><strong>⚠️ Recuerda:</strong> Límite de {MAX_FILES} imágenes por sesión.</div>
+          <div className="alert alert-warning d-flex align-items-center gap-2" role="alert">
+            <ExclamationTriangleFill size={20} />
+            <div><strong>Recuerda:</strong> Límite de {MAX_FILES} imágenes por sesión.</div>
           </div>
 
           <div className="mb-4">
@@ -200,9 +207,13 @@ export default function MassiveClient({ companies }) {
                 {files.map((item, index) => (
                   <li key={item.id} className="list-group-item d-flex justify-content-between align-items-center py-2">
                     <span className="text-truncate" style={{ maxWidth: '70%', fontSize: '0.9rem' }}>{index + 1}. {item.file.name}</span>
-                    <div>
-                      <button onClick={() => setPreviewUrl(item.preview)} className="btn btn-sm btn-outline-primary me-2">👁️ Ver</button>
-                      <button onClick={() => removeFile(item.id)} className="btn btn-sm btn-outline-danger">🗑️</button>
+                    <div className="d-flex gap-2">
+                      <button onClick={() => setPreviewUrl(item.preview)} className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1">
+                        <Eye size={16} /> Ver
+                      </button>
+                      <button onClick={() => removeFile(item.id)} className="btn btn-sm btn-outline-danger d-flex align-items-center" title="Eliminar">
+                        <Trash size={16} />
+                      </button>
                     </div>
                   </li>
                 ))}
@@ -221,7 +232,7 @@ export default function MassiveClient({ companies }) {
       {/* ----------- VISTA DE PROCESAMIENTO ----------- */}
       {step === 'PROCESSING' && (
         <section className="text-center py-5 fade-in">
-          <h4 className="mb-4">Escaneando vouchers con Inteligencia Artificial...</h4>
+          <h4 className="mb-4">Escaneando vouchers...</h4>
           <div className="progress mb-3" style={{ height: '30px' }}>
             <div 
               className="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
@@ -231,7 +242,20 @@ export default function MassiveClient({ companies }) {
               {Math.round((progress / files.length) * 100)}%
             </div>
           </div>
-          <p className="text-muted fw-bold">{progress} de {files.length} procesados</p>
+          <p className="text-muted fw-bold mb-1">{progress} de {files.length} procesados</p>
+          
+          {progress < files.length ? (
+            <p className="text-primary fw-medium mb-3 d-flex justify-content-center align-items-center gap-2">
+              <Stopwatch size={20} />
+              <span>Tiempo estimado restante: {etaMinutes > 0 ? `${etaMinutes}m ` : ''}{etaSeconds}s</span>
+            </p>
+          ) : (
+            <p className="text-success fw-medium mb-3 d-flex justify-content-center align-items-center gap-2">
+              <span className="spinner-border spinner-border-sm" role="status"></span>
+              <span>Finalizando y preparando revisión...</span>
+            </p>
+          )}
+
           <p className="small text-danger">Por favor no cierres esta ventana.</p>
         </section>
       )}
@@ -244,14 +268,15 @@ export default function MassiveClient({ companies }) {
           </div>
           
           <div className="table-responsive shadow-sm rounded border bg-white mb-4" style={{ maxHeight: '600px' }}>
-            <table className="table table-hover align-middle mb-0">
+            {/* ✨ AÑADIMOS minWidth='800px' A LA TABLA PARA FORZAR EL SCROLL HORIZONTAL EN MÓVILES */}
+            <table className="table table-hover align-middle mb-0" style={{ minWidth: '800px' }}>
               <thead className="table-light sticky-top">
                 <tr>
-                  <th scope="col" className="px-3">#</th>
-                  <th scope="col">Imagen</th>
-                  <th scope="col">ID Viaje</th>
-                  <th scope="col">Fecha</th>
-                  <th scope="col">Mundo</th>
+                  <th scope="col" className="px-3" style={{ width: '5%' }}>#</th>
+                  <th scope="col" style={{ width: '15%' }}>Imagen</th>
+                  <th scope="col" style={{ width: '25%' }}>ID Viaje</th>
+                  <th scope="col" style={{ width: '25%' }}>Fecha</th>
+                  <th scope="col" style={{ width: '30%' }}>Mundo</th>
                 </tr>
               </thead>
               <tbody>
@@ -302,9 +327,10 @@ export default function MassiveClient({ companies }) {
             </table>
           </div>
 
-          <div className="d-flex justify-content-between align-items-center">
-            <span className="text-muted small">Revisa bien los campos en rojo (sin ID detectado) o amarillo (sin fecha).</span>
-            <button onClick={handleFinalSave} disabled={isSaving} className="btn btn-success px-5 py-2 fw-medium">
+          {/* ✨ MEJORAMOS LA RESPONSIVIDAD DE LOS BOTONES: Se apilan en celular, se ponen uno al lado del otro en PC */}
+          <div className="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+            <span className="text-muted small text-center text-md-start">Revisa bien los campos en rojo (sin ID detectado) o amarillo (sin fecha).</span>
+            <button onClick={handleFinalSave} disabled={isSaving} className="btn btn-success px-5 py-2 fw-medium w-100 w-md-auto">
               {isSaving ? 'Guardando...' : 'Confirmar y Guardar Todos'}
             </button>
           </div>

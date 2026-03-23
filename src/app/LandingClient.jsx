@@ -53,11 +53,22 @@ function ScrollReveal({ children, animation = 'animate__fadeInUp', delay = 0 }) 
 // COMPONENTE PRINCIPAL DE LA LANDING
 // ==========================================
 export default function LandingClient() {
-  // Estado para controlar el Acordeón de FAQ con React (sin depender del JS de Bootstrap)
+  // Estado para controlar el Acordeón de FAQ con React
   const [activeFaq, setActiveFaq] = useState(1)
+  
+  // ✨ NUEVO ESTADO: Para controlar el menú hamburguesa en móviles
+  const [isNavOpen, setIsNavOpen] = useState(false)
 
   const toggleFaq = (id) => {
     setActiveFaq(activeFaq === id ? null : id)
+  }
+
+  const toggleNav = () => {
+    setIsNavOpen(!isNavOpen)
+  }
+
+  const closeNav = () => {
+    setIsNavOpen(false)
   }
 
   return (
@@ -72,22 +83,31 @@ export default function LandingClient() {
             <span className="text-dark fw-bold">Van</span>
             <span className="text-primary fw-bolder">Check</span>
           </Link>
-          <button className="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+          
+          {/* ✨ BOTÓN HAMBURGUESA CONTROLADO POR REACT */}
+          <button 
+            className="navbar-toggler border-0" 
+            type="button" 
+            onClick={toggleNav}
+            aria-expanded={isNavOpen}
+            aria-label="Toggle navigation"
+          >
             <span className="navbar-toggler-icon"></span>
           </button>
           
-          <div className="collapse navbar-collapse" id="navbarNav">
+          {/* ✨ MENÚ COLAPSABLE CONTROLADO POR ESTADO */}
+          <div className={`collapse navbar-collapse ${isNavOpen ? 'show' : ''}`} id="navbarNav">
             <ul className="navbar-nav mx-auto fw-medium">
-              <li className="nav-item"><a className="nav-link px-3" href="#caracteristicas">Características</a></li>
-              <li className="nav-item"><a className="nav-link px-3" href="#beneficios">Beneficios</a></li>
-              <li className="nav-item"><a className="nav-link px-3" href="#precios">Precios</a></li>
-              <li className="nav-item"><a className="nav-link px-3" href="#faq">Preguntas Frecuentes</a></li>
+              <li className="nav-item"><a className="nav-link px-3" href="#caracteristicas" onClick={closeNav}>Características</a></li>
+              <li className="nav-item"><a className="nav-link px-3" href="#beneficios" onClick={closeNav}>Beneficios</a></li>
+              <li className="nav-item"><a className="nav-link px-3" href="#precios" onClick={closeNav}>Precios</a></li>
+              <li className="nav-item"><a className="nav-link px-3" href="#faq" onClick={closeNav}>Preguntas Frecuentes</a></li>
             </ul>
             <div className="d-flex gap-2 mt-3 mt-lg-0">
-              <Link href="/login" className="btn btn-outline-primary fw-bold px-4">
+              <Link href="/login" className="btn btn-outline-primary fw-bold px-4" onClick={closeNav}>
                 Iniciar Sesión
               </Link>
-              <a href="#precios" className="btn btn-primary fw-bold px-4">
+              <a href="#precios" className="btn btn-primary fw-bold px-4" onClick={closeNav}>
                 Contratar
               </a>
             </div>
@@ -210,7 +230,7 @@ export default function LandingClient() {
         <div className="container py-5 text-center">
           <ScrollReveal animation="animate__fadeIn">
             <h2 className="fw-bold text-dark mb-3">Planes simples y transparentes</h2>
-            <p className="text-muted mb-5">Elige el plan que mejor se adapte a tu volumen de viajes.</p>
+            <p className="text-muted mb-5">Elige el plan que mejor se adapte a tí.</p>
           </ScrollReveal>
 
           <div className="row justify-content-center g-4">
@@ -218,14 +238,14 @@ export default function LandingClient() {
             <div className="col-md-5 col-lg-4">
               <ScrollReveal animation="animate__fadeInUp" delay={100}>
                 <div className="card h-100 border-0 shadow-sm p-4 rounded-4">
-                  <h4 className="fw-bold text-secondary text-uppercase mb-3">Plan Mensual</h4>
+                  <h4 className="fw-bold text-secondary text-uppercase mb-3">Plan Autónomo</h4>
                   <div className="display-4 fw-bolder text-dark mb-4">$14.990<span className="fs-5 text-muted fw-normal">/mes</span></div>
                   <ul className="list-unstyled text-start mb-4 text-secondary">
-                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Escaneo de vouchers ilimitados</li>
-                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Escaneo de planillas ilimitados</li>
-                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Soporte mediante la plataforma</li>
+                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Acceso a todas las funciones de VanCheck</li>
+                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Escaneo de planillas y vouchers ilimitados</li>
+                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Análisis inteligente eficiente</li>
                   </ul>
-                  <a href="#contacto" className="btn btn-outline-primary btn-lg fw-bold mt-auto w-100">Elegir Mensual</a>
+                  <a href="#contacto" className="btn btn-outline-primary btn-lg fw-bold mt-auto w-100">Elegir Autónomo</a>
                 </div>
               </ScrollReveal>
             </div>
@@ -235,16 +255,18 @@ export default function LandingClient() {
               <ScrollReveal animation="animate__fadeInUp" delay={300}>
                 <div className="card h-100 border-2 border-primary shadow p-4 rounded-4 position-relative">
                   <span className="position-absolute top-0 start-50 translate-middle badge rounded-pill bg-danger px-3 py-2">
-                    UNO GRATIS
+                    Personalizado
                   </span>
-                  <h4 className="fw-bold text-primary text-uppercase mb-3">Plan Trimensual</h4>
-                  <div className="display-4 fw-bolder text-dark mb-4">$29.990<span className="fs-5 text-muted fw-normal">/3meses</span></div>
+                  <h4 className="fw-bold text-primary text-uppercase mb-3">Plan Soporte</h4>
+                  <div className="display-4 fw-bolder text-dark mb-4">$19.990<span className="fs-5 text-muted fw-normal">/mes</span></div>
                   <ul className="list-unstyled text-start mb-4 text-secondary">
-                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Todo lo del plan mensual</li>
-                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Soporte prioritario</li>
-                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Descuento en pago trimensual</li>
+                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Todo lo del plan autónomo</li>
+                    <li className="mb-2 d-flex gap-2"><CheckCircleFill className="text-primary mt-1"/> Soporte prioritario y personalizado</li>
                   </ul>
-                  <a href="#contacto" className="btn btn-primary btn-lg fw-bold mt-auto w-100 shadow-sm">Elegir Trimensual</a>
+                  <div className="mb-4">
+                    Un administrador gestionará tus vouchers, planillas y análisis, manejará tus datos de forma segura y confidencial para entregarte los resultados de forma personalizada a la plataforma que quieras. (Aplican TyC)
+                  </div>
+                  <a href="#contacto" className="btn btn-primary btn-lg fw-bold mt-auto w-100 shadow-sm">Elegir con Soporte</a>
                 </div>
               </ScrollReveal>
             </div>
@@ -277,7 +299,8 @@ export default function LandingClient() {
                     </h2>
                     <div className={`accordion-collapse collapse ${activeFaq === 1 ? 'show' : ''}`}>
                       <div className="accordion-body text-muted">
-                        Usamos un modelo de inteligencia artifical entrenado de forma privada, el procesador escanea el archivo y detecta en segundos los datos importantes para el análisis.
+                        La aplicación usa un modelo de inteligencia artificial entrenado exclusivamente para
+                        el uso de VanCheck.
                       </div>
                     </div>
                   </div>
@@ -313,7 +336,7 @@ export default function LandingClient() {
                     </h2>
                     <div className={`accordion-collapse collapse ${activeFaq === 3 ? 'show' : ''}`}>
                       <div className="accordion-body text-muted">
-                        Si tu planilla de enero tiene pagos realizados durante diciembre o febrero, el sistema tiene opciones para personalizar las fechas de inicio y término del pago en un planilla.
+                        La aplicación permite personalizar las fechas de pago de todas las empresas de forma individual. Por defecto, cada empresa tiene las fechas de pago que se han informado a la aplicación.
                       </div>
                     </div>
                   </div>
@@ -352,11 +375,14 @@ export default function LandingClient() {
             <p className="lead mb-5 opacity-75">
               Háblanos por WhatsApp para resolver tus dudas o activar tu cuenta hoy mismo.
             </p>
-            <a href="https://wa.me/56933372677" target="_blank" rel="noreferrer" className="btn btn-success btn-lg fw-bold px-5 py-3 shadow">
+            <a href="https://wa.me/56933372677?text=¡Hola!%20Quiero%20saber%20más%20sobre%20VanCheck." target="_blank" rel="noreferrer" className="btn btn-success btn-lg fw-bold px-5 py-3 shadow">
               Contactar por WhatsApp
             </a>
           </ScrollReveal>
         </div>
+            <a href="/terminos-y-condiciones" target="_blank" className="text-white fs-5 pt-5">
+              Términos y condiciones.
+            </a>
       </section>
 
     </div>
