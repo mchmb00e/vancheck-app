@@ -10,6 +10,7 @@ export const metadata = {
   title: 'Configuración | VanCheck',
 };
 
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export default async function DefineAnalysisPage({ searchParams }) {
@@ -17,7 +18,11 @@ export default async function DefineAnalysisPage({ searchParams }) {
   const spreadsheetId = params?.id
   
   if (!spreadsheetId) {
-    redirect('/dashboard/analysis/model')
+    return (
+      <div className="container mt-5 text-center alert alert-warning">
+        ID de planilla no proporcionado.
+      </div>
+    )
   }
 
   const supabase = await createClient()

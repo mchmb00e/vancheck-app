@@ -9,6 +9,8 @@ export const metadata = {
   title: 'Resultados | VanCheck',
 };
 
+export const dynamic = 'force-dynamic';
+
 export default async function ResultPage({ searchParams }) {
     const params = await searchParams
     const id = params?.id
