@@ -7,6 +7,7 @@ import { deleteVoucherRecord, updateVoucherRecord, getVoucherImageUrl } from '@/
 export default function VoucherList({ initialVouchers, companies }) {
   const [vouchers, setVouchers] = useState(initialVouchers)
   const [dateFilter, setDateFilter] = useState('all') 
+  const [companyFilter, setCompanyFilter] = useState('all') // ✨ NUEVO: Estado para el filtro de mundo
   const [sortDesc, setSortDesc] = useState(true)
   const [searchTerm, setSearchTerm] = useState('') 
   const [editingId, setEditingId] = useState(null)
@@ -29,9 +30,14 @@ export default function VoucherList({ initialVouchers, companies }) {
   }
 
   const filteredAndSortedVouchers = vouchers.filter(v => {
+    // 1. Filtro por búsqueda
     const matchesSearch = v.voucher_number.toLowerCase().includes(searchTerm.toLowerCase())
     if (!matchesSearch) return false
 
+    // 2. ✨ NUEVO: Filtro por mundo (Company)
+    if (companyFilter !== 'all' && v.voucher_company_id !== companyFilter) return false
+
+    // 3. Filtro por fecha
     if (dateFilter === 'all') return true
     
     const vDate = new Date(v.voucher_date).getTime()
@@ -129,7 +135,8 @@ export default function VoucherList({ initialVouchers, companies }) {
       )}
 
       <div className="row g-3 mb-4">
-        <div className="col-12 col-md-5">
+        {/* Barra de búsqueda */}
+        <div className="col-12 col-md-4">
           <div className="input-group shadow-sm">
             <span className="input-group-text bg-white text-muted border-end-0">
               <Search size={16} />
@@ -144,7 +151,22 @@ export default function VoucherList({ initialVouchers, companies }) {
           </div>
         </div>
 
-        <div className="col-12 col-md-7 d-flex gap-2 justify-content-md-end">
+        {/* Contenedor de Filtros (flex-wrap para que se acomoden bien en celu) */}
+        <div className="col-12 col-md-8 d-flex gap-2 justify-content-md-end flex-wrap">
+          
+          {/* ✨ NUEVO: Select de Mundo (Company) */}
+          <select 
+            className="form-select w-auto shadow-sm" 
+            value={companyFilter} 
+            onChange={(e) => setCompanyFilter(e.target.value)}
+          >
+            <option value="all">Todos los mundos</option>
+            {companies.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          {/* Select de Fecha */}
           <select 
             className="form-select w-auto shadow-sm" 
             value={dateFilter} 
@@ -157,6 +179,7 @@ export default function VoucherList({ initialVouchers, companies }) {
             <option value="year">Último año</option>
           </select>
 
+          {/* Botón de Orden */}
           <button 
             className="btn btn-outline-secondary d-flex align-items-center gap-2 shadow-sm"
             onClick={() => setSortDesc(!sortDesc)}
@@ -170,7 +193,7 @@ export default function VoucherList({ initialVouchers, companies }) {
       <div className="row g-3">
         {filteredAndSortedVouchers.length === 0 ? (
           <div className="col-12 text-center text-muted py-5">
-            No se encontraron vouchers que coincidan con tu búsqueda.
+            No se encontraron vouchers que coincidan con tus filtros.
           </div>
         ) : (
           filteredAndSortedVouchers.map((voucher) => (

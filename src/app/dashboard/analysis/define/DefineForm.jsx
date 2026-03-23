@@ -124,7 +124,15 @@ export default function DefineForm({ spreadsheetId, companies }) {
       const result = await processSpreadsheetAnalysis(spreadsheetId, companyDates, startPage, endPage)
 
       if (result.success) {
-        sessionStorage.setItem('extractedData', JSON.stringify(result.data))
+        // ✨ ACÁ ESTÁ EL CAMBIO: Armamos un nuevo objeto que incluye lo que nos 
+        // devuelve el servidor MÁS el spreadsheetId que necesitamos en la otra vista.
+        const dataToSave = {
+          ...result.data,
+          spreadsheetId: spreadsheetId
+        }
+        
+        // Guardamos este nuevo objeto vitaminizado
+        sessionStorage.setItem('extractedData', JSON.stringify(dataToSave))
         router.push('/dashboard/analysis/extract')
       } else {
         setError(result.error || 'Ocurrió un problema durante el análisis.')
@@ -136,7 +144,6 @@ export default function DefineForm({ spreadsheetId, companies }) {
       setLoading(false)
     }
   }
-
   // Función de apoyo para formatear la fecha a la chilena (DD/MM/YYYY)
   const formatearFecha = (fechaString) => {
     if (!fechaString) return ''

@@ -6,6 +6,8 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { PDFDocument } from 'pdf-lib'
 import { logAuditAction } from '@/app/actions/logs'
 
+export const maxDuration = 60;
+
 /* Ejecuta el análisis de cruce de datos entre planillas PDF y vouchers del usuario utilizando Google Document AI, validando la extensión del documento y registrando resultados y feedback de auditoría. */
 
 const documentAiClient = new DocumentProcessorServiceClient()
@@ -156,15 +158,25 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
       }
 
       for (const line of lines) {
+        // 1. Buscamos si existe alguna fecha en la línea
         const dateIndex = line.tokens.findIndex(t => t.text.match(/\d{2}[-\/]\d{2}[-\/]\d{4}/))
-        if (dateIndex === -1) continue
-        const fecha = line.tokens[dateIndex].text
-        let id_viaje = dateIndex > 0 ? line.tokens[0].text : ""
-        if (!id_viaje.match(/\d/)) continue
+        const fecha = dateIndex !== -1 ? line.tokens[dateIndex].text : "Sin fecha"
+        
+        // 2. El ID del viaje casi siempre es el primer elemento de la fila
+        let id_viaje = line.tokens[0].text
+        
+        // Si el primer elemento no tiene pinta de número/ID, nos saltamos la fila
+        if (!id_viaje.match(/\d/)) continue 
 
+        // 3. Buscamos el monto
         let montoToken = null
         let montoText = "0" 
-        for (let k = dateIndex + 1; k < line.tokens.length; k++) {
+        
+        // Si pilló fecha, buscamos el monto DESPUÉS de la fecha. 
+        // Si no hay fecha, buscamos el monto DESPUÉS del ID (índice 1).
+        let searchStart = dateIndex !== -1 ? dateIndex + 1 : 1;
+        
+        for (let k = searchStart; k < line.tokens.length; k++) {
           const t = line.tokens[k]
           if (t.text === '$') continue
           if (t.text.match(/[\d\.]+/)) {
@@ -244,7 +256,6 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
   }
 }
 
-// ¡Acá está la que se te había borrado!
 export async function submitAnalysisFeedback(analysisId, isConforme) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -261,5 +272,107 @@ export async function submitAnalysisFeedback(analysisId, isConforme) {
   } catch (error) {
     await logAuditAction(user.id, false, `submit analysis feedback ${analysisId}`)
     return { success: false }
+  }
+}
+
+// ... (tu código anterior en analysis.js)
+
+// ✨ NUEVO: Obtener URL firmada de la planilla
+export async function getSpreadsheetUrl(spreadsheetId) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No autorizado')
+
+  const spreadsheet = await prisma.spreadsheets.findUnique({
+    where: { id: spreadsheetId, user_id: user.id }
+  })
+
+  if (!spreadsheet) throw new Error('Planilla no encontrada')
+
+  const { data, error } = await supabase.storage
+    .from('vancheck-bucket')
+    .createSignedUrl(spreadsheet.file_url, 3600) // Válido por 1 hora
+
+  if (error || !data) throw new Error('Error al generar enlace de la planilla')
+  
+  return data.signedUrl
+}
+
+// ✨ NUEVO: Generar PDF con los vouchers no pagados
+export async function generateUnpaidVouchersPdf(missingVouchersIds) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No autorizado')
+
+  try {
+    // 1. Buscar los vouchers completos en la BD
+    const vouchers = await prisma.vouchers.findMany({
+      where: { 
+        user_id: user.id,
+        id: { in: missingVouchersIds },
+        file_path: { not: null } // Solo los que tienen foto
+      }
+    })
+
+    if (vouchers.length === 0) throw new Error('No hay vouchers con imagen para descargar.')
+
+    // 2. Crear un nuevo PDF en blanco
+    const pdfDoc = await PDFDocument.create()
+
+    // 3. Procesar cada voucher y agregarlo como página
+    for (const voucher of vouchers) {
+      const { data: fileData, error } = await supabase.storage
+        .from('vancheck-bucket')
+        .download(voucher.file_path)
+
+      if (error || !fileData) continue
+
+      const imageBuffer = await fileData.arrayBuffer()
+      const ext = voucher.file_path.split('.').pop().toLowerCase()
+      
+      let image;
+      try {
+        if (ext === 'png') {
+          image = await pdfDoc.embedPng(imageBuffer)
+        } else if (ext === 'jpg' || ext === 'jpeg') {
+          image = await pdfDoc.embedJpg(imageBuffer)
+        } else {
+          continue; // Si no es imagen soportada, la saltamos
+        }
+      } catch (e) {
+        console.error(`Error procesando imagen ${voucher.id}:`, e)
+        continue;
+      }
+
+      // Escalar la imagen para que quepa en una página A4 estándar
+      const page = pdfDoc.addPage()
+      const { width, height } = page.getSize()
+      const imgDims = image.scaleToFit(width - 100, height - 100)
+
+      page.drawImage(image, {
+        x: page.getWidth() / 2 - imgDims.width / 2,
+        y: page.getHeight() / 2 - imgDims.height / 2,
+        width: imgDims.width,
+        height: imgDims.height,
+      })
+
+      // Agregar un texto con el ID del voucher arriba
+      page.drawText(`Voucher ID: ${voucher.voucher_number}`, {
+        x: 50,
+        y: height - 50,
+        size: 14,
+      })
+    }
+
+    if (pdfDoc.getPageCount() === 0) throw new Error('No se pudo procesar ninguna imagen válida.')
+
+    // 4. Guardar y codificar en Base64 para enviarlo al cliente
+    const pdfBytes = await pdfDoc.save()
+    const base64Pdf = Buffer.from(pdfBytes).toString('base64')
+    
+    return { success: true, pdfBase64: base64Pdf }
+  } catch (error) {
+    console.error("Error generando PDF:", error)
+    return { success: false, error: error.message }
   }
 }

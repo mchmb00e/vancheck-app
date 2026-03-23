@@ -2,17 +2,22 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye } from 'react-bootstrap-icons'
-import { submitAnalysisFeedback } from '@/app/actions/analysis' 
-import { getVoucherImageUrl } from '@/app/actions/voucher' // Importamos la acción para la URL de la imagen
+import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, FileEarmarkPdfFill, Download } from 'react-bootstrap-icons'
+import { submitAnalysisFeedback, getSpreadsheetUrl, generateUnpaidVouchersPdf } from '@/app/actions/analysis' 
+import { getVoucherImageUrl } from '@/app/actions/voucher' 
 
 export default function ExtractViewPage() {
   const [analisis, setAnalisis] = useState(null)
   const [loading, setLoading] = useState(true)
   const [feedbackStatus, setFeedbackStatus] = useState('pending')
-  const [imageLoadingId, setImageLoadingId] = useState(null) // Para mostrar que está cargando el enlace
+  const [imageLoadingId, setImageLoadingId] = useState(null)
+  
+  // ✨ NUEVOS ESTADOS para los botones
+  const [isOpeningSpreadsheet, setIsOpeningSpreadsheet] = useState(false)
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false)
 
   useEffect(() => {
+    // Almacenamos el análisis en sessionStorage al generarlo, acá lo recuperamos
     const storedData = sessionStorage.getItem('extractedData')
     if (storedData) {
       setAnalisis(JSON.parse(storedData))
@@ -34,22 +39,74 @@ export default function ExtractViewPage() {
     }
   }
 
-  // Función para obtener y abrir la imagen
   const handleViewVoucher = async (id, filePath) => {
     if (!filePath) return
-    
     setImageLoadingId(id)
     try {
       const url = await getVoucherImageUrl(filePath)
-      if (url) {
-        window.open(url, '_blank')
-      } else {
-        alert('No se pudo cargar la imagen. Es posible que el archivo ya no exista.')
-      }
+      if (url) window.open(url, '_blank')
+      else alert('No se pudo cargar la imagen.')
     } catch (error) {
       alert('Hubo un error al intentar abrir la imagen.')
     } finally {
       setImageLoadingId(null)
+    }
+  }
+
+  // ✨ NUEVA FUNCIÓN: Abrir la planilla PDF original
+  const handleOpenSpreadsheet = async () => {
+    if (!analisis?.spreadsheetId) {
+      alert("No se encontró la referencia a la planilla.")
+      return
+    }
+    
+    setIsOpeningSpreadsheet(true)
+    try {
+      const url = await getSpreadsheetUrl(analisis.spreadsheetId)
+      window.open(url, '_blank')
+    } catch (error) {
+      alert("Error al abrir la planilla: " + error.message)
+    } finally {
+      setIsOpeningSpreadsheet(false)
+    }
+  }
+
+  // ✨ NUEVA FUNCIÓN: Generar y descargar PDF de vouchers faltantes
+  const handleDownloadUnpaidPdf = async () => {
+    if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
+    
+    setIsDownloadingPdf(true)
+    try {
+      // Extraemos solo los IDs de la base de datos de los vouchers faltantes
+      const missingIds = analisis.missingInPlanilla.map(v => v.id)
+      
+      const response = await generateUnpaidVouchersPdf(missingIds)
+      
+      if (!response.success) {
+        throw new Error(response.error || "Error desconocido al generar el PDF")
+      }
+
+      // Convertimos el base64 de vuelta a un Blob para descargarlo
+      const byteCharacters = atob(response.pdfBase64)
+      const byteNumbers = new Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
+      }
+      const byteArray = new Uint8Array(byteNumbers)
+      const blob = new Blob([byteArray], { type: 'application/pdf' })
+      
+      // Creamos un enlace temporal para forzar la descarga
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = `Vouchers_Faltantes_${new Date().toLocaleDateString('es-CL').replace(/\//g, '-')}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+    } catch (error) {
+      alert("No se pudo generar el PDF: " + error.message)
+    } finally {
+      setIsDownloadingPdf(false)
     }
   }
 
@@ -72,7 +129,7 @@ export default function ExtractViewPage() {
   return (
     <main className="container py-5" style={{ maxWidth: '900px' }}>
       
-      <header className="d-flex justify-content-between align-items-center mb-5 border-bottom pb-3">
+      <header className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
         <h1 className="display-6 fw-bold text-dark m-0">
           Resultados del Mes
         </h1>
@@ -80,6 +137,37 @@ export default function ExtractViewPage() {
           <ArrowLeftCircle /> Volver
         </Link>
       </header>
+
+      {/* ✨ NUEVA SECCIÓN DE BOTONES DE ACCIÓN RÁPIDA */}
+      <div className="d-flex flex-wrap gap-3 mb-5 animate__animated animate__fadeIn">
+        <button 
+          onClick={handleOpenSpreadsheet} 
+          disabled={isOpeningSpreadsheet}
+          className="btn btn-primary shadow-sm d-flex align-items-center gap-2 fw-medium"
+        >
+          {isOpeningSpreadsheet ? (
+            <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          ) : (
+            <FileEarmarkPdfFill size={18} />
+          )}
+          Ver planilla original
+        </button>
+
+        {!isPerfectMatch && analisis.missingInPlanilla.length > 0 && (
+          <button 
+            onClick={handleDownloadUnpaidPdf} 
+            disabled={isDownloadingPdf}
+            className="btn btn-danger shadow-sm d-flex align-items-center gap-2 fw-medium"
+          >
+            {isDownloadingPdf ? (
+              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            ) : (
+              <Download size={18} />
+            )}
+            Descargar vouchers no pagados (PDF)
+          </button>
+        )}
+      </div>
 
       <section className="animate__animated animate__fadeIn">
         
@@ -138,7 +226,7 @@ export default function ExtractViewPage() {
                                 <Eye size={16} /> Ver voucher
                               </button>
                               <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                No se proporcionó una imagen de este voucher
+                                No se proporcionó una imagen
                               </small>
                             </div>
                           )}
@@ -203,13 +291,13 @@ export default function ExtractViewPage() {
                 onClick={() => handleFeedback(true)}
                 className="btn btn-outline-success fw-medium d-flex align-items-center justify-content-center gap-2 px-4 py-2"
               >
-                <HandThumbsUp size={20} /> Estoy conforme con el resultado
+                <HandThumbsUp size={20} /> Estoy conforme
               </button>
               <button 
                 onClick={() => handleFeedback(false)}
                 className="btn btn-outline-danger fw-medium d-flex align-items-center justify-content-center gap-2 px-4 py-2"
               >
-                <HandThumbsDown size={20} /> No estoy conforme con el resultado
+                <HandThumbsDown size={20} /> No estoy conforme
               </button>
             </div>
           )}

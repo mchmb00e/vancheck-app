@@ -19,6 +19,7 @@
     "animate.css": "^4.1.1",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
+    "browser-image-compression": "^2.0.2",
     "next": "16.1.6",
     "pdf-lib": "^1.17.1",
     "pg": "^8.20.0",

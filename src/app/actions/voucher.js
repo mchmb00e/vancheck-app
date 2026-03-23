@@ -9,6 +9,8 @@ import { logAuditAction } from '@/app/actions/logs'
 
 /* Módulo de gestión de vouchers: controla la carga manual y automática mediante OCR (Document AI), validación de duplicados, edición, eliminación y auditoría de acciones. */
 
+export const maxDuration = 60;
+
 const documentAiClient = new DocumentProcessorServiceClient()
 
 export async function submitVoucher(formData) {
@@ -131,7 +133,8 @@ export async function submitVoucher(formData) {
       'latam',
       'trip_aeropuerto', 'trip_aero', 'trip_aerop', 'tripulacion',
       'base aerof', 'base aerop', 'base aerot', 'base', 'base aeropuerto'
-    ]
+    ],
+    'SODEXO': ['sodexo', 'lab mintlab', 'lab mintl', 'lab mintla']
   }
 
   for (const comp of companies) {
@@ -256,4 +259,139 @@ export async function getVoucherImageUrl(filePath) {
     return data.signedUrl
   }
   return null
+}
+
+// ✨ NUEVA ACCIÓN: Procesa un voucher individual pero optimizado para el lote masivo
+export async function processSingleMassiveVoucher(formData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No estás autorizado')
+
+  const file = formData.get('file')
+  if (!file || file.size === 0) throw new Error('Archivo inválido')
+
+  const voucherId = crypto.randomUUID()
+  const ext = file.name.split('.').pop()
+  const filePath = `vouchers/${voucherId}.${ext}`
+
+  // 1. Subir a Supabase
+  const { error: uploadError } = await supabase.storage
+    .from('vancheck-bucket')
+    .upload(filePath, file)
+  if (uploadError) throw new Error('Error al subir imagen')
+
+  // 2. OCR con Google Document AI
+  const arrayBuffer = await file.arrayBuffer()
+  const encodedImage = Buffer.from(arrayBuffer).toString('base64')
+
+  const documentAiClient = new DocumentProcessorServiceClient()
+  const name = `projects/${process.env.GOOGLE_CLOUD_PROJECT_ID}/locations/${process.env.GOOGLE_DOCUMENT_AI_LOCATION}/processors/${process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID}`
+
+  const request = {
+    name,
+    rawDocument: { content: encodedImage, mimeType: file.type }
+  }
+
+  const [result] = await documentAiClient.processDocument(request)
+  const text = result.document.text
+
+
+  // 3.
+  const idMatch = text.match(/\bID\b[\s\n\t]*:?[\s\n\t]*([A-Za-z0-9\-]+)/i)
+  const extractedId = idMatch ? idMatch[1] : ''
+
+  const dateMatch = text.match(/(\d{2})\s*[\/\-]\s*(\d{2})\s*[\/\-]\s*(\d{4})/)
+  let extractedDate = new Date() // Seguimos usando la de hoy para el registro preliminar de Prisma
+  let dateFound = false // ✨ NUEVO: Bandera para saber si el OCR realmente la pilló
+
+  if (dateMatch) {
+    extractedDate = new Date(`${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}T12:00:00Z`)
+    dateFound = true
+  }
+
+  // 4. Buscar Mundo (Usando la lógica de LATAM unificada)
+  const companies = await prisma.companies.findMany()
+  let companyId = companies[0]?.id // Por defecto el primero
+
+  const cleanText = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+  const ocrLimpio = cleanText(text)
+
+  const aliasMap = {
+    'RBU': ['redbus', 'red bus', 'red_bus'],
+    'REDSUPPORT': ['red support', 'red_support'],
+    'AGUNSA': ['agunsa_aeropuerto', 'agunsa_ae', 'agunsa_aer'],
+    'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue'],
+    'LATAM': ['trip_aeropuerto', 'trip_aero', 'trip_aerop', 'base aerof', 'base aerop', 'base aerot', 'base', 'tripulacion', 'base aeropuerto', 'latam'],
+  }
+
+  for (const comp of companies) {
+    const palabrasABuscar = aliasMap[comp.name] || [cleanText(comp.name)]
+    if (palabrasABuscar.some(alias => ocrLimpio.includes(alias))) {
+      companyId = comp.id
+      break
+    }
+  }
+
+  // 5. Guardar registro preliminar en la BD
+  await prisma.vouchers.create({
+    data: {
+      id: voucherId,
+      user_id: user.id,
+      file_path: filePath,
+      voucher_number: extractedId || 'POR_REVISAR',
+      voucher_date: extractedDate,
+      voucher_company_id: companyId,
+      ai_success: false // Falso hasta que el usuario lo confirme
+    }
+  })
+
+  return {
+    success: true,
+    dbId: voucherId,
+    extractedId: extractedId || '',
+    // ✨ CAMBIO: Si no encontró la fecha, devolvemos un string vacío al front
+    extractedDate: dateFound ? extractedDate.toISOString().split('T')[0] : '',
+    companyId: companyId
+  }
+}
+
+// ✨ NUEVA ACCIÓN: Guarda todos los cambios finales de la tabla de revisión masiva
+// ✨ NUEVA ACCIÓN: Guarda todos los cambios finales de la tabla de revisión masiva
+export async function confirmMassiveBatch(vouchersData) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('No autorizado')
+
+  try {
+    // 🛡️ CANDADO BACKEND: Revisamos uno por uno antes de tocar la base de datos
+    for (const v of vouchersData) {
+      if (!v.extractedId || v.extractedId.trim() === '') {
+        return { success: false, error: 'Hay vouchers sin ID de viaje. Por favor, revisa los campos en rojo.' }
+      }
+      if (!v.extractedDate || v.extractedDate.trim() === '') {
+        return { success: false, error: 'Hay vouchers sin Fecha. Por favor, revisa los campos en amarillo.' }
+      }
+    }
+
+    // Si todo está impeque, actualizamos todos los registros en paralelo
+    const updatePromises = vouchersData.map(v => 
+      prisma.vouchers.update({
+        where: { id: v.dbId, user_id: user.id },
+        data: {
+          voucher_number: v.extractedId,
+          voucher_date: new Date(`${v.extractedDate}T12:00:00Z`),
+          voucher_company_id: v.companyId,
+          ai_success: true // Marcamos como revisado/exitoso
+        }
+      })
+    )
+    
+    await Promise.all(updatePromises)
+    await logAuditAction(user.id, true, `confirm massive batch ${vouchersData.length} vouchers`)
+    
+    return { success: true }
+  } catch (error) {
+    await logAuditAction(user.id, false, `confirm massive batch`)
+    throw error
+  }
 }

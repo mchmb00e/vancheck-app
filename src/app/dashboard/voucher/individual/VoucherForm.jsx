@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { submitVoucher } from '@/app/actions/voucher'
 import { CheckCircleFill, ExclamationTriangleFill } from 'react-bootstrap-icons'
+import imageCompression from 'browser-image-compression' // ✨ IMPORTAMOS LIBRERÍA
 
 export default function VoucherForm({ companies }) {
   const [isManual, setIsManual] = useState(false)
@@ -46,6 +47,27 @@ export default function VoucherForm({ companies }) {
     setErrorMsg('')
     
     formData.append('isManual', isManual)
+
+    // ✨ INICIO COMPRESIÓN DE IMAGEN
+    if (!isManual) {
+      const originalFile = formData.get('voucherImage')
+      if (originalFile && originalFile.size > 0) {
+        try {
+          const options = {
+            maxSizeMB: 1, // Límite de 1MB
+            maxWidthOrHeight: 1920,
+            useWebWorker: true,
+          }
+          const compressedFile = await imageCompression(originalFile, options)
+          // Reemplazamos el archivo pesado por el comprimido en el FormData
+          formData.set('voucherImage', compressedFile)
+        } catch (error) {
+          console.error('Error al comprimir la imagen:', error)
+          // Si falla la compresión, mandará el original (o puedes tirar un error)
+        }
+      }
+    }
+    // ✨ FIN COMPRESIÓN
 
     try {
       const result = await submitVoucher(formData)
