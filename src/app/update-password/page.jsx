@@ -1,13 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { updatePassword } from '@/app/actions/auth'
 
 export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  document.title = 'Actualizar contraseña | VanCheck';
+
+  useEffect(() => {
+    document.title = 'Actualizar contraseña | VanCheck';
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault()
