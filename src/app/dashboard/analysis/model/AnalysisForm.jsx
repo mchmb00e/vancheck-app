@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ArrowRightCircle, FileEarmarkSpreadsheet, ExclamationTriangleFill } from 'react-bootstrap-icons'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 export default function AnalysisForm({ spreadsheets }) {
   const [selectedSheetId, setSelectedSheetId] = useState(null)
@@ -35,7 +36,7 @@ export default function AnalysisForm({ spreadsheets }) {
       <div className="list-group mb-4">
         {spreadsheets.length === 0 ? (
           <div className="alert alert-warning border-0 shadow-sm">
-            No tienes planillas subidas. Ve a "Planillas" y sube una primero.
+            No tienes planillas subidas. Ve a <Link href="/dashboard/spreadsheet">"Planillas"</Link> y sube una primero.
           </div>
         ) : (
           spreadsheets.map((sheet) => (

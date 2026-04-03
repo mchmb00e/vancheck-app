@@ -14,16 +14,22 @@ export default async function SpreadsheetPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // Traemos las planillas del usuario
+  // 1. Traemos los vehículos del usuario
+  const userVehicles = await prisma.vehicles.findMany({
+    where: { user_id: user?.id },
+    orderBy: { name: 'asc' }
+  })
+
+  // 2. Traemos las planillas del usuario, incluyendo el vehículo asignado
   const userSpreadsheets = await prisma.spreadsheets.findMany({
     where: { user_id: user?.id },
-    orderBy: { created_at: 'desc' }
+    orderBy: { created_at: 'desc' },
+    include: { vehicles: true } 
   })
 
   // Usamos Promise.all porque createSignedUrl es asíncrono
   const spreadsheetsWithUrls = await Promise.all(
     userSpreadsheets.map(async (sheet) => {
-      // Generamos un link temporal que expira en 3600 segundos (1 hora)
       const { data, error } = await supabase.storage
         .from('vancheck-bucket')
         .createSignedUrl(sheet.file_url, 3600)
@@ -34,7 +40,6 @@ export default async function SpreadsheetPage() {
 
       return {
         ...sheet,
-        // Si hay error, le pasamos un '#' para que el botón no explote
         publicUrl: data?.signedUrl || '#' 
       }
     })
@@ -52,14 +57,19 @@ export default async function SpreadsheetPage() {
       </header>
 
       <section>
-        <p className="text-muted mb-4 fs-5">
+        <p className="text-muted fs-5">
           Registra tus planillas de pago y ten una vista clara de los pagos que recibes.
         </p>
 
-        <SpreadsheetForm />
+        <Link href="/dashboard/user-guide" className="fw-medium mb-4 d-inline-block" replace={false}>
+          ¿Cómo se debe ver una planilla de pagos?
+        </Link>
+
+        {/* Le pasamos los vehículos al formulario */}
+        <SpreadsheetForm vehicles={userVehicles} />
         
-        {/* Le pasamos la lista con las URLs firmadas y seguras */}
-        <SpreadsheetList initialSpreadsheets={spreadsheetsWithUrls} />
+        {/* Le pasamos las planillas y los vehículos a la lista */}
+        <SpreadsheetList initialSpreadsheets={spreadsheetsWithUrls} vehicles={userVehicles} />
       </section>
 
     </main>

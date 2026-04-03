@@ -1,41 +1,40 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Stars, ExclamationTriangleFill, PencilSquare, ArrowCounterclockwise } from 'react-bootstrap-icons'
+import { Stars, ExclamationTriangleFill, TruckFrontFill } from 'react-bootstrap-icons'
 import { useRouter } from 'next/navigation'
 import { processSpreadsheetAnalysis } from '@/app/actions/analysis'
 
-export default function DefineForm({ spreadsheetId, companies }) {
+export default function DefineForm({ spreadsheet, companies, vehicles }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  // Empezamos con el mes actual por defecto (Formato YYYY-MM)
+  // Empezamos con el mes actual por defecto
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const hoy = new Date()
     return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
   })
 
-  // Estado para guardar las fechas finales de cada mundo y si están personalizadas
+  // Estado del vehículo: si la planilla ya tiene, lo fijamos. Si no, arranca en 'all'
+  const [selectedVehicle, setSelectedVehicle] = useState(spreadsheet.vehicle_id || 'all')
+
   const [datesConfig, setDatesConfig] = useState({})
 
-  // Efecto para recalcular las fechas por defecto cada vez que el usuario cambia el mes
   useEffect(() => {
     if (!selectedMonth) return
 
     const [yearStr, monthStr] = selectedMonth.split('-')
     const year = parseInt(yearStr, 10)
-    const month = parseInt(monthStr, 10) // 1 a 12
+    const month = parseInt(monthStr, 10)
 
     const newConfig = { ...datesConfig }
 
     companies.forEach(company => {
-      // Si el usuario ya personalizó este mundo, no le sobreescribimos las fechas
       if (newConfig[company.id]?.isCustom) return
 
       let startDate, endDate
 
-      // Lógica especial para ACCIONA (del 21 del mes anterior al 20 del mes actual)
       if (company.name.toUpperCase().includes('ACCIONA')) {
         let prevMonth = month - 1
         let prevYear = year
@@ -45,11 +44,8 @@ export default function DefineForm({ spreadsheetId, companies }) {
         }
         startDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-21`
         endDate = `${year}-${String(month).padStart(2, '0')}-20`
-      } 
-      // Lógica para el resto: del 1 al último día del mes
-      else {
+      } else {
         startDate = `${year}-${String(month).padStart(2, '0')}-01`
-        // Magia de JS: el día 0 del mes siguiente nos da el último día del mes actual (cubre bisiestos)
         const lastDay = new Date(year, month, 0).getDate()
         endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
       }
@@ -62,7 +58,7 @@ export default function DefineForm({ spreadsheetId, companies }) {
     })
 
     setDatesConfig(newConfig)
-  }, [selectedMonth, companies]) // Solo se ejecuta si cambia el mes (y al cargar)
+  }, [selectedMonth, companies])
 
   const toggleCustom = (companyId) => {
     setDatesConfig(prev => ({
@@ -73,9 +69,8 @@ export default function DefineForm({ spreadsheetId, companies }) {
       }
     }))
     
-    // Si lo apaga, forzamos un pequeño update para que recalcule las fechas por defecto
     if (datesConfig[companyId]?.isCustom) {
-      setSelectedMonth(prev => prev) // Trigger re-render of useEffect
+      setSelectedMonth(prev => prev)
     }
   }
 
@@ -103,7 +98,6 @@ export default function DefineForm({ spreadsheetId, companies }) {
       return
     }
 
-    // Validar y armar el objeto final de fechas
     const companyDates = {}
     for (const company of companies) {
       const config = datesConfig[company.id]
@@ -120,18 +114,18 @@ export default function DefineForm({ spreadsheetId, companies }) {
 
     setLoading(true)
 
+    // Si es 'all', le pasamos null al backend para que no filtre por vehículo
+    const targetVehicle = selectedVehicle === 'all' ? null : selectedVehicle
+
     try {
-      const result = await processSpreadsheetAnalysis(spreadsheetId, companyDates, startPage, endPage)
+      const result = await processSpreadsheetAnalysis(spreadsheet.id, companyDates, startPage, endPage, targetVehicle)
 
       if (result.success) {
-        // ✨ ACÁ ESTÁ EL CAMBIO: Armamos un nuevo objeto que incluye lo que nos 
-        // devuelve el servidor MÁS el spreadsheetId que necesitamos en la otra vista.
         const dataToSave = {
           ...result.data,
-          spreadsheetId: spreadsheetId
+          spreadsheetId: spreadsheet.id
         }
         
-        // Guardamos este nuevo objeto vitaminizado
         sessionStorage.setItem('extractedData', JSON.stringify(dataToSave))
         router.push('/dashboard/analysis/extract')
       } else {
@@ -144,7 +138,7 @@ export default function DefineForm({ spreadsheetId, companies }) {
       setLoading(false)
     }
   }
-  // Función de apoyo para formatear la fecha a la chilena (DD/MM/YYYY)
+
   const formatearFecha = (fechaString) => {
     if (!fechaString) return ''
     const [y, m, d] = fechaString.split('-')
@@ -160,6 +154,32 @@ export default function DefineForm({ spreadsheetId, companies }) {
           <div>{error}</div>
         </div>
       )}
+
+      {/* SECCIÓN DEL VEHÍCULO */}
+      <div className="mb-4">
+        <h3 className="h6 fw-bold text-secondary text-uppercase mb-3">Vehículo a Analizar</h3>
+        {spreadsheet.vehicles ? (
+          <div className="alert alert-secondary border border-secondary shadow-sm d-flex align-items-center gap-3">
+            <TruckFrontFill size={24} className="text-secondary" />
+            <div>
+              <p className="mb-0 small text-muted">Planilla asociada al vehículo:</p>
+              <strong className="fs-5">{spreadsheet.vehicles.name} ({spreadsheet.vehicles.patent})</strong>
+            </div>
+          </div>
+        ) : (
+          <select 
+            className="form-select form-select-lg shadow-sm border-primary" 
+            value={selectedVehicle}
+            onChange={(e) => setSelectedVehicle(e.target.value)}
+          >
+            <option value="all" className="fw-bold text-primary">Todos los vehículos registrados</option>
+            <hr />
+            {vehicles.map(v => (
+              <option key={v.id} value={v.id}>{v.name} ({v.patent})</option>
+            ))}
+          </select>
+        )}
+      </div>
 
       <div className="row g-4 mb-5">
         <div className="col-12 col-md-4">

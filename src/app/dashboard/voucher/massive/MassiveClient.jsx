@@ -7,23 +7,22 @@ import { processSingleMassiveVoucher, confirmMassiveBatch } from '@/app/actions/
 import imageCompression from 'browser-image-compression' 
 import { Eye, Trash, ExclamationTriangleFill, Stopwatch } from 'react-bootstrap-icons'
 
-export default function MassiveClient({ companies }) {
+export default function MassiveClient({ companies, vehicles }) {
   const router = useRouter()
   
-  // Estados: 'SELECT', 'PROCESSING', 'REVIEW'
   const [step, setStep] = useState('SELECT')
   
   const [files, setFiles] = useState([])
   const [previewUrl, setPreviewUrl] = useState(null)
+  const [globalVehicleId, setGlobalVehicleId] = useState('') 
   
   const [progress, setProgress] = useState(0)
   const [processedResults, setProcessedResults] = useState([])
   const [isSaving, setIsSaving] = useState(false)
   
   const MAX_FILES = 300
-  const CONCURRENCY_LIMIT = 5 // Máximo 5 envíos a la vez a GCloud
+  const CONCURRENCY_LIMIT = 5 
 
-  // ---------- PASO 1: SELECCIÓN ----------
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files)
     
@@ -62,7 +61,6 @@ export default function MassiveClient({ companies }) {
     setFiles([])
   }
 
-  // ---------- PASO 2: PROCESAMIENTO CONCURRENTE ----------
   const startProcessing = async () => {
     setStep('PROCESSING')
     setProgress(0)
@@ -76,11 +74,10 @@ export default function MassiveClient({ companies }) {
         const item = files[index]
         
         try {
-          // INICIO COMPRESIÓN DE IMAGEN
           let fileToUpload = item.file
           try {
             const options = {
-              maxSizeMB: 1, // Límite de 1MB
+              maxSizeMB: 1, 
               maxWidthOrHeight: 1920,
               useWebWorker: true
             }
@@ -88,10 +85,10 @@ export default function MassiveClient({ companies }) {
           } catch (compErr) {
             console.error('Error al comprimir, subiendo original:', compErr)
           }
-          // FIN COMPRESIÓN
 
           const formData = new FormData()
           formData.append('file', fileToUpload) 
+          formData.append('vehicle_id', globalVehicleId) 
           
           const res = await processSingleMassiveVoucher(formData)
           
@@ -102,7 +99,8 @@ export default function MassiveClient({ companies }) {
               dbId: res.dbId,
               extractedId: res.extractedId,
               extractedDate: res.extractedDate,
-              companyId: res.companyId
+              companyId: res.companyId,
+              vehicleId: res.vehicleId
             })
           }
         } catch (error) {
@@ -110,10 +108,11 @@ export default function MassiveClient({ companies }) {
           results.push({
             localId: item.id,
             preview: item.preview,
-            dbId: null, // Falló
+            dbId: null, 
             extractedId: '',
             extractedDate: '', 
-            companyId: companies[0]?.id
+            companyId: companies[0]?.id,
+            vehicleId: globalVehicleId
           })
         }
         
@@ -121,16 +120,13 @@ export default function MassiveClient({ companies }) {
       }
     }
 
-    // Levantar los workers
     const workers = Array.from({ length: Math.min(CONCURRENCY_LIMIT, files.length) }, () => worker())
     await Promise.all(workers)
     
-    // Al terminar, pasamos a revisión
     setProcessedResults(results)
     setStep('REVIEW')
   }
 
-  // ---------- PASO 3: REVISIÓN ----------
   const handleResultChange = (localId, field, value) => {
     setProcessedResults(prev => prev.map(item => 
       item.localId === localId ? { ...item, [field]: value } : item
@@ -138,10 +134,10 @@ export default function MassiveClient({ companies }) {
   }
 
   const handleFinalSave = async () => {
-    const hasErrors = processedResults.some(r => !r.extractedId || !r.extractedDate)
+    const hasErrors = processedResults.some(r => !r.extractedId || !r.extractedDate || !r.vehicleId)
     
     if (hasErrors) {
-      alert("¡Ojo! No puedes guardar aún. Faltan datos por completar. Revisa los campos marcados en rojo (ID) y amarillo (Fecha).")
+      alert("¡Ojo! Faltan datos por completar o hay vouchers sin vehículo asignado. Revisa bien la tabla.")
       return 
     }
 
@@ -164,9 +160,8 @@ export default function MassiveClient({ companies }) {
     }
   }
 
-  // CÁLCULO DE TIEMPO ESTIMADO (ETA)
   const remainingItems = files.length - progress
-  const estimatedSecondsTotal = Math.ceil((remainingItems / CONCURRENCY_LIMIT) * 3)
+  const estimatedSecondsTotal = Math.ceil((remainingItems / CONCURRENCY_LIMIT) * 5)
   const etaMinutes = Math.floor(estimatedSecondsTotal / 60)
   const etaSeconds = estimatedSecondsTotal % 60
 
@@ -181,7 +176,6 @@ export default function MassiveClient({ companies }) {
         )}
       </header>
 
-      {/* ----------- VISTA DE SELECCIÓN ----------- */}
       {step === 'SELECT' && (
         <section className="fade-in">
           <div className="alert alert-warning d-flex align-items-center gap-2" role="alert">
@@ -189,13 +183,39 @@ export default function MassiveClient({ companies }) {
             <div><strong>Recuerda:</strong> Límite de {MAX_FILES} imágenes por sesión.</div>
           </div>
 
-          <div className="mb-4">
-            <label className="d-block text-center p-5 bg-light rounded" style={{ border: '2px dashed #0d6efd', cursor: 'pointer' }}>
-              <span className="text-primary fw-bold fs-5 d-block mb-1">Seleccionar imágenes</span>
+          <div className="mb-2">
+            <label className={`d-block text-center p-5 rounded ${vehicles.length === 0 ? 'bg-secondary bg-opacity-10' : 'bg-light'}`} style={{ border: `2px dashed ${vehicles.length === 0 ? '#6c757d' : '#0d6efd'}`, cursor: vehicles.length === 0 ? 'not-allowed' : 'pointer' }}>
+              <span className={`fw-bold fs-5 d-block mb-1 ${vehicles.length === 0 ? 'text-secondary' : 'text-primary'}`}>Seleccionar imágenes</span>
               <span className="text-muted small">(Usa múltiple selección en tu galería)</span>
-              <input type="file" multiple accept="image/*" className="d-none" onChange={handleFileChange} />
+              <input type="file" multiple accept="image/*" className="d-none" onChange={handleFileChange} disabled={vehicles.length === 0} />
             </label>
           </div>
+
+          {vehicles.length === 0 ? (
+            <div className="alert alert-danger d-flex align-items-center gap-2 shadow-sm border-0 mb-4 mt-3">
+              <ExclamationTriangleFill size={24} />
+              <div><strong>Debe tener al menos un vehículo registrado</strong> para usar la carga masiva. <Link href="/dashboard/vehicle" className="alert-link">Registrar aquí</Link>.</div>
+            </div>
+          ) : (
+            <div className="card shadow-sm border-0 p-3 mb-4 bg-light mt-3">
+              <label htmlFor="globalVehicle" className="form-label fw-bold text-dark mb-2">Seleccionar Vehículo para este lote:</label>
+              <select 
+                id="globalVehicle"
+                className="form-select border-primary" 
+                value={globalVehicleId} 
+                onChange={(e) => setGlobalVehicleId(e.target.value)}
+              >
+                <option value="">-- Elige el vehículo asociado a estos vouchers --</option>
+                {vehicles.map(v => (
+                  <option key={v.id} value={v.id}>{v.name} ({v.patent})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <Link href="/dashboard/user-guide" className="fw-medium mb-4 d-inline-block" replace={false}>
+            ¿Cómo se debe ver un voucher?
+          </Link>
 
           {files.length > 0 && (
             <div className="card shadow-sm border-0 mb-4">
@@ -222,14 +242,17 @@ export default function MassiveClient({ companies }) {
           )}
 
           <div className="d-flex justify-content-end mt-4">
-            <button disabled={files.length === 0} onClick={startProcessing} className="btn btn-primary px-5 py-2 fw-medium">
+            <button 
+              disabled={files.length === 0 || !globalVehicleId || vehicles.length === 0} 
+              onClick={startProcessing} 
+              className="btn btn-primary px-5 py-2 fw-medium"
+            >
               Extraer Datos ({files.length})
             </button>
           </div>
         </section>
       )}
 
-      {/* ----------- VISTA DE PROCESAMIENTO ----------- */}
       {step === 'PROCESSING' && (
         <section className="text-center py-5 fade-in">
           <h4 className="mb-4">Escaneando vouchers...</h4>
@@ -260,7 +283,6 @@ export default function MassiveClient({ companies }) {
         </section>
       )}
 
-      {/* ----------- VISTA DE REVISIÓN ----------- */}
       {step === 'REVIEW' && (
         <section className="fade-in">
           <div className="alert alert-success">
@@ -268,15 +290,15 @@ export default function MassiveClient({ companies }) {
           </div>
           
           <div className="table-responsive shadow-sm rounded border bg-white mb-4" style={{ maxHeight: '600px' }}>
-            {/* ✨ AÑADIMOS minWidth='800px' A LA TABLA PARA FORZAR EL SCROLL HORIZONTAL EN MÓVILES */}
-            <table className="table table-hover align-middle mb-0" style={{ minWidth: '800px' }}>
+            <table className="table table-hover align-middle mb-0" style={{ minWidth: '950px' }}>
               <thead className="table-light sticky-top">
                 <tr>
                   <th scope="col" className="px-3" style={{ width: '5%' }}>#</th>
-                  <th scope="col" style={{ width: '15%' }}>Imagen</th>
-                  <th scope="col" style={{ width: '25%' }}>ID Viaje</th>
-                  <th scope="col" style={{ width: '25%' }}>Fecha</th>
-                  <th scope="col" style={{ width: '30%' }}>Mundo</th>
+                  <th scope="col" style={{ width: '10%' }}>Imagen</th>
+                  <th scope="col" style={{ width: '20%' }}>ID Viaje</th>
+                  <th scope="col" style={{ width: '20%' }}>Fecha</th>
+                  <th scope="col" style={{ width: '25%' }}>Mundo</th>
+                  <th scope="col" style={{ width: '20%' }}>Vehículo</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,15 +343,25 @@ export default function MassiveClient({ companies }) {
                         ))}
                       </select>
                     </td>
+                    <td>
+                      <select 
+                        className="form-select form-select-sm" 
+                        value={res.vehicleId || ''} 
+                        onChange={(e) => handleResultChange(res.localId, 'vehicleId', e.target.value)}
+                      >
+                        {vehicles.map(v => (
+                          <option key={v.id} value={v.id}>{v.name}</option>
+                        ))}
+                      </select>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          {/* ✨ MEJORAMOS LA RESPONSIVIDAD DE LOS BOTONES: Se apilan en celular, se ponen uno al lado del otro en PC */}
           <div className="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
-            <span className="text-muted small text-center text-md-start">Revisa bien los campos en rojo (sin ID detectado) o amarillo (sin fecha).</span>
+            <span className="text-muted small text-center text-md-start">Revisa bien los campos en rojo o amarillo antes de continuar.</span>
             <button onClick={handleFinalSave} disabled={isSaving} className="btn btn-success px-5 py-2 fw-medium w-100 w-md-auto">
               {isSaving ? 'Guardando...' : 'Confirmar y Guardar Todos'}
             </button>
@@ -337,7 +369,6 @@ export default function MassiveClient({ companies }) {
         </section>
       )}
 
-      {/* ----------- MODAL DE PREVISUALIZACIÓN ----------- */}
       {previewUrl && (
         <div 
           className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" 

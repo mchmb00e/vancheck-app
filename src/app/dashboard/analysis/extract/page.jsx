@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, FileEarmarkPdfFill, Download, FileEarmarkSpreadsheetFill } from 'react-bootstrap-icons'
 import { submitAnalysisFeedback, getSpreadsheetUrl, generateUnpaidVouchersPdf } from '@/app/actions/analysis' 
 import { getVoucherImageUrl } from '@/app/actions/voucher' 
-import * as XLSX from 'xlsx' // ✨ IMPORTAMOS LIBRERÍA DE EXCEL
+import * as XLSX from 'xlsx' 
 
 export default function ExtractViewPage() {
   const [analisis, setAnalisis] = useState(null)
@@ -103,32 +103,26 @@ export default function ExtractViewPage() {
     }
   }
 
-  // ✨ NUEVA FUNCIÓN: Exportar a Excel
   const handleExportExcel = () => {
     if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
 
-    // 1. Armamos los datos exactos que pidió el compita (ID, FECHA, MUNDO)
     const dataToExport = analisis.missingInPlanilla.map(v => ({
       'ID': v.voucher_number,
       'FECHA': new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' }),
-      'MUNDO': v.companies?.name || 'Sin mundo' // Acá usamos el dato que agregamos en el include de Prisma
+      'MUNDO': v.companies?.name || 'Sin mundo' 
     }))
 
-    // 2. Convertimos el arreglo de JSON a una hoja de cálculo
     const worksheet = XLSX.utils.json_to_sheet(dataToExport)
 
-    // 3. Le damos un poco de estilo al ancho de las columnas
     worksheet['!cols'] = [
-      { wch: 15 }, // Ancho para ID
-      { wch: 15 }, // Ancho para FECHA
-      { wch: 25 }  // Ancho para MUNDO
+      { wch: 15 }, 
+      { wch: 15 }, 
+      { wch: 25 }  
     ]
 
-    // 4. Creamos el libro (Workbook) y le metemos la hoja
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, "Vouchers No Pagados")
 
-    // 5. Generamos el archivo .xlsx y forzamos la descarga
     const fileName = `Detalle_Faltantes_${new Date().toLocaleDateString('es-CL').replace(/\//g, '-')}.xlsx`
     XLSX.writeFile(workbook, fileName)
   }
@@ -161,7 +155,15 @@ export default function ExtractViewPage() {
         </Link>
       </header>
 
-      {/* SECCIÓN DE BOTONES DE ACCIÓN RÁPIDA */}
+      {/* ✨ RECUADRO INFORMATIVO DEL VEHÍCULO ANALIZADO */}
+      <div className="alert alert-secondary border-0 shadow-sm mb-4 d-flex align-items-center gap-3 animate__animated animate__fadeIn">
+        <InfoCircleFill size={24} className="text-secondary flex-shrink-0" />
+        <div className="fs-6">
+          <span className="text-muted d-block small">Contexto del Análisis:</span>
+          <strong>Vehículo:</strong> {analisis.analyzedVehicle ? `${analisis.analyzedVehicle.name} (${analisis.analyzedVehicle.patent})` : 'Todos los vehículos registrados'}
+        </div>
+      </div>
+
       <div className="d-flex flex-wrap gap-3 mb-5 animate__animated animate__fadeIn">
         <button 
           onClick={handleOpenSpreadsheet} 
@@ -191,7 +193,6 @@ export default function ExtractViewPage() {
               Descargar fotos (PDF)
             </button>
 
-            {/* ✨ NUEVO BOTÓN DE EXCEL */}
             <button 
               onClick={handleExportExcel} 
               className="btn btn-success shadow-sm d-flex align-items-center gap-2 fw-medium"

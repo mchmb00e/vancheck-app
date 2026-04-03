@@ -24,17 +24,25 @@ export async function submitVoucher(formData) {
   }
 
   const isManual = formData.get('isManual') === 'true'
+  const vehicle_id = formData.get('vehicle_id')?.toString()
+
+  if (!vehicle_id) {
+    throw new Error('Debe seleccionar un vehículo asociado.')
+  }
 
   if (isManual) {
     const id = crypto.randomUUID()
-    const dateInput = formData.get('date')
+    const dateInput = formData.get('date')?.toString()
+    const identifier = formData.get('identifier')?.toString().trim() || 'POR_REVISAR'
+    const companyId = formData.get('company_id')?.toString()
 
     await prisma.vouchers.create({
       data: {
         id: id,
-        voucher_number: formData.get('identifier'),
+        voucher_number: identifier,
         voucher_date: new Date(dateInput),
-        voucher_company_id: formData.get('company_id'),
+        voucher_company_id: companyId,
+        vehicle_id: vehicle_id,
         user_id: user.id
       }
     })
@@ -154,7 +162,8 @@ export async function submitVoucher(formData) {
       file_path: filePath,
       voucher_number: extractedId || 'POR_REVISAR',
       voucher_date: extractedDate,
-      voucher_company_id: companyId || companies[0]?.id
+      voucher_company_id: companyId || companies[0]?.id,
+      vehicle_id: vehicle_id
     }
   })
 
@@ -178,14 +187,17 @@ export async function confirmVoucherResult(id, isCorrect, formData = null) {
     })
     await logAuditAction(user.id, true, 'confirm Document AI Scan')
   } else {
-    const dateInput = formData.get('date')
+    const dateInput = formData?.get('date')?.toString()
+    const identifier = formData?.get('identifier')?.toString().trim() || 'POR_REVISAR'
+    const companyId = formData?.get('company_id')?.toString()
+    
     await prisma.vouchers.update({
       where: { id },
       data: {
         ai_success: false,
-        voucher_number: formData.get('identifier'),
+        voucher_number: identifier,
         voucher_date: new Date(dateInput),
-        voucher_company_id: formData.get('company_id')
+        voucher_company_id: companyId
       }
     })
     await logAuditAction(user.id, true, 'manual fix Document AI Scan')
@@ -207,7 +219,11 @@ export async function cancelAndRollbackVoucher(id, filePath) {
     }
 
     await logAuditAction(user.id, true, `voucher rollback ${v?.voucher_number}`)
-  } catch (error) { }
+  } catch (error) {
+    console.error(`[Error Rollback] Falló la eliminación del voucher ${id}:`, error)
+    await logAuditAction(user?.id, false, `voucher rollback failed for ${id}`)
+    return { success: false, error: 'Hubo un error al intentar cancelar y borrar el archivo.' }
+  }
 
   redirect('/dashboard/voucher')
 }
@@ -230,14 +246,19 @@ export async function deleteVoucherRecord(id, filePath) {
 export async function updateVoucherRecord(id, formData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const dateInput = formData.get('date')
+  
+  const dateInput = formData.get('date')?.toString()
+  const identifier = formData.get('identifier')?.toString().trim() || 'POR_REVISAR'
+  const companyId = formData.get('company_id')?.toString()
+  const vehicleId = formData.get('vehicle_id')?.toString()
 
   await prisma.vouchers.update({
     where: { id },
     data: {
-      voucher_number: formData.get('identifier'),
+      voucher_number: identifier,
       voucher_date: new Date(dateInput),
-      voucher_company_id: formData.get('company_id')
+      voucher_company_id: companyId,
+      vehicle_id: vehicleId 
     }
   })
 
@@ -263,26 +284,26 @@ export async function getVoucherImageUrl(filePath) {
   return null
 }
 
-// ✨ NUEVA ACCIÓN: Procesa un voucher individual pero optimizado para el lote masivo
 export async function processSingleMassiveVoucher(formData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No estás autorizado')
 
   const file = formData.get('file')
+  const vehicle_id = formData.get('vehicle_id')?.toString()
+  
   if (!file || file.size === 0) throw new Error('Archivo inválido')
+  if (!vehicle_id) throw new Error('Falta el vehículo asociado')
 
   const voucherId = crypto.randomUUID()
   const ext = file.name.split('.').pop()
   const filePath = `vouchers/${voucherId}.${ext}`
 
-  // 1. Subir a Supabase
   const { error: uploadError } = await supabase.storage
     .from('vancheck-bucket')
     .upload(filePath, file)
   if (uploadError) throw new Error('Error al subir imagen')
 
-  // 2. OCR con Google Document AI
   const arrayBuffer = await file.arrayBuffer()
   const encodedImage = Buffer.from(arrayBuffer).toString('base64')
 
@@ -297,23 +318,20 @@ export async function processSingleMassiveVoucher(formData) {
   const [result] = await documentAiClient.processDocument(request)
   const text = result.document.text
 
-
-  // 3.
   const idMatch = text.match(/\bID\b[\s\n\t]*:?[\s\n\t]*([A-Za-z0-9\-]+)/i)
   const extractedId = idMatch ? idMatch[1] : ''
 
   const dateMatch = text.match(/(\d{2})\s*[\/\-]\s*(\d{2})\s*[\/\-]\s*(\d{4})/)
-  let extractedDate = new Date() // Seguimos usando la de hoy para el registro preliminar de Prisma
-  let dateFound = false // ✨ NUEVO: Bandera para saber si el OCR realmente la pilló
+  let extractedDate = new Date() 
+  let dateFound = false 
 
   if (dateMatch) {
     extractedDate = new Date(`${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}T12:00:00Z`)
     dateFound = true
   }
 
-  // 4. Buscar Mundo (Usando la lógica de LATAM unificada)
   const companies = await prisma.companies.findMany()
-  let companyId = companies[0]?.id // Por defecto el primero
+  let companyId = companies[0]?.id 
 
   const cleanText = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   const ocrLimpio = cleanText(text)
@@ -334,7 +352,6 @@ export async function processSingleMassiveVoucher(formData) {
     }
   }
 
-  // 5. Guardar registro preliminar en la BD
   await prisma.vouchers.create({
     data: {
       id: voucherId,
@@ -343,7 +360,8 @@ export async function processSingleMassiveVoucher(formData) {
       voucher_number: extractedId || 'POR_REVISAR',
       voucher_date: extractedDate,
       voucher_company_id: companyId,
-      ai_success: false // Falso hasta que el usuario lo confirme
+      vehicle_id: vehicle_id,
+      ai_success: false 
     }
   })
 
@@ -351,21 +369,19 @@ export async function processSingleMassiveVoucher(formData) {
     success: true,
     dbId: voucherId,
     extractedId: extractedId || '',
-    // ✨ CAMBIO: Si no encontró la fecha, devolvemos un string vacío al front
     extractedDate: dateFound ? extractedDate.toISOString().split('T')[0] : '',
-    companyId: companyId
+    companyId: companyId,
+    vehicleId: vehicle_id
   }
 }
 
-// ✨ NUEVA ACCIÓN: Guarda todos los cambios finales de la tabla de revisión masiva
-// ✨ NUEVA ACCIÓN: Guarda todos los cambios finales de la tabla de revisión masiva
 export async function confirmMassiveBatch(vouchersData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No autorizado')
 
   try {
-    // 🛡️ CANDADO BACKEND: Revisamos uno por uno antes de tocar la base de datos
+    // 1. Validaciones
     for (const v of vouchersData) {
       if (!v.extractedId || v.extractedId.trim() === '') {
         return { success: false, error: 'Hay vouchers sin ID de viaje. Por favor, revisa los campos en rojo.' }
@@ -375,20 +391,29 @@ export async function confirmMassiveBatch(vouchersData) {
       }
     }
 
-    // Si todo está impeque, actualizamos todos los registros en paralelo
-    const updatePromises = vouchersData.map(v => 
-      prisma.vouchers.update({
-        where: { id: v.dbId, user_id: user.id },
-        data: {
-          voucher_number: v.extractedId,
-          voucher_date: new Date(`${v.extractedDate}T12:00:00Z`),
-          voucher_company_id: v.companyId,
-          ai_success: true // Marcamos como revisado/exitoso
-        }
-      })
-    )
+    // 2. Ejecutar en paralelo pero en lotes de 50 (Rápido y Seguro a la vez)
+    const chunkSize = 50;
     
-    await Promise.all(updatePromises)
+    for (let i = 0; i < vouchersData.length; i += chunkSize) {
+      const chunk = vouchersData.slice(i, i + chunkSize);
+      
+      const updatePromises = chunk.map(v => 
+        prisma.vouchers.update({
+          where: { id: v.dbId, user_id: user.id },
+          data: {
+            voucher_number: v.extractedId.trim(),
+            voucher_date: new Date(`${v.extractedDate}T12:00:00Z`),
+            voucher_company_id: v.companyId,
+            vehicle_id: v.vehicleId, 
+            ai_success: true 
+          }
+        })
+      );
+      
+      // Volvemos a tu lógica original que SÍ funcionaba, procesando el lote en paralelo
+      await Promise.all(updatePromises);
+    }
+
     await logAuditAction(user.id, true, `confirm massive batch ${vouchersData.length} vouchers`)
     
     return { success: true }

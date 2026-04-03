@@ -5,8 +5,6 @@ import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { logAuditAction } from '@/app/actions/logs'
 
-/* Gestiona el ciclo de vida de las planillas de pago: permite la carga al storage, registro en base de datos, actualización de nombres, reemplazo de archivos PDF y eliminación con limpieza de recursos. */
-
 export async function uploadSpreadsheet(formData) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -15,6 +13,8 @@ export async function uploadSpreadsheet(formData) {
 
   const file = formData.get('file')
   const name = formData.get('name')
+  // Rescatamos el vehicle_id, si viene vacío lo dejamos como null
+  const vehicle_id = formData.get('vehicle_id') || null 
 
   if (!file || file.size === 0 || !name) {
     throw new Error('Faltan datos obligatorios')
@@ -35,7 +35,8 @@ export async function uploadSpreadsheet(formData) {
         id,
         name,
         file_url: filePath,
-        user_id: user.id
+        user_id: user.id,
+        vehicle_id: vehicle_id
       }
     })
 
@@ -44,6 +45,28 @@ export async function uploadSpreadsheet(formData) {
     return { success: true }
   } catch (error) {
     await logAuditAction(user.id, false, `upload spreadsheet ${name}`)
+    throw error
+  }
+}
+
+// Actualiza nombre y vehículo al mismo tiempo
+export async function updateSpreadsheet(id, newName, newVehicleId) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  try {
+    await prisma.spreadsheets.update({
+      where: { id },
+      data: { 
+        name: newName,
+        vehicle_id: newVehicleId || null
+      }
+    })
+
+    await logAuditAction(user.id, true, `update spreadsheet ${newName}`)
+    revalidatePath('/dashboard/spreadsheet')
+  } catch (error) {
+    await logAuditAction(user.id, false, `update spreadsheet ${newName}`)
     throw error
   }
 }
@@ -58,6 +81,13 @@ export async function deleteSpreadsheet(id, filePath) {
       select: { name: true }
     })
 
+    // ✨ SOLUCIÓN: Primero eliminamos los análisis vinculados a esta planilla
+    // para evitar el error de Foreign Key (P2003)
+    await prisma.analysis.deleteMany({ 
+      where: { spreadsheet_id: id } 
+    })
+
+    // Ahora sí, eliminamos la planilla tranquilamente
     await prisma.spreadsheets.delete({ where: { id } })
     await supabase.storage.from('vancheck-bucket').remove([filePath])
     
@@ -65,24 +95,6 @@ export async function deleteSpreadsheet(id, filePath) {
     revalidatePath('/dashboard/spreadsheet')
   } catch (error) {
     await logAuditAction(user.id, false, 'delete spreadsheet')
-    throw error
-  }
-}
-
-export async function updateSpreadsheetName(id, newName) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  try {
-    await prisma.spreadsheets.update({
-      where: { id },
-      data: { name: newName }
-    })
-
-    await logAuditAction(user.id, true, `update spreadsheet name ${newName}`)
-    revalidatePath('/dashboard/spreadsheet')
-  } catch (error) {
-    await logAuditAction(user.id, false, `update spreadsheet name ${newName}`)
     throw error
   }
 }

@@ -13,13 +13,20 @@ export default async function ManageVouchersPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [companies, userVouchers] = await Promise.all([
+  const [companies, vehicles, userVouchers] = await Promise.all([
     prisma.companies.findMany({
+      orderBy: { name: 'asc' }
+    }),
+    prisma.vehicles.findMany({
+      where: { user_id: user?.id },
       orderBy: { name: 'asc' }
     }),
     prisma.vouchers.findMany({
       where: { user_id: user?.id },
-      include: { companies: true },
+      include: { 
+        companies: true,
+        vehicles: true // Traemos el vehículo para mostrarlo
+      },
       orderBy: { voucher_date: 'desc' }
     })
   ])
@@ -40,7 +47,7 @@ export default async function ManageVouchersPage() {
           Administra, edita o elimina los registros y fotos de tus viajes.
         </p>
         
-        <VoucherList initialVouchers={userVouchers} companies={companies} />
+        <VoucherList initialVouchers={userVouchers} companies={companies} vehicles={vehicles} />
       </section>
 
     </main>

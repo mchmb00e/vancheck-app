@@ -5,7 +5,7 @@ import { uploadSpreadsheet } from '@/app/actions/spreadsheet'
 import Link from 'next/link'
 import { PDFDocument } from 'pdf-lib'
 
-export default function SpreadsheetForm() {
+export default function SpreadsheetForm({ vehicles }) {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
@@ -81,8 +81,29 @@ export default function SpreadsheetForm() {
                 required 
               />
             </div>
-            
+
             <div className="col-12 col-md-6">
+              <label htmlFor="vehicle_id" className="form-label fw-semibold text-secondary">Asignar Vehículo</label>
+              <select 
+                className="form-select" 
+                id="vehicle_id" 
+                name="vehicle_id"
+                disabled={!vehicles || vehicles.length === 0}
+              >
+                {!vehicles || vehicles.length === 0 ? (
+                  <option value="">No tienes vehículos registrados actualmente.</option>
+                ) : (
+                  <>
+                    <option value="">Sin vehículo asignado</option>
+                    {vehicles.map(v => (
+                      <option key={v.id} value={v.id}>{v.name} ({v.patent})</option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
+            
+            <div className="col-12">
               <label htmlFor="file" className="form-label fw-semibold text-secondary">Documento PDF (Máx. 10 págs)</label>
               <input 
                 type="file" 

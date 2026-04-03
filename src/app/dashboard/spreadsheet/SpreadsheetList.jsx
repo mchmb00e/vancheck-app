@@ -2,14 +2,17 @@
 
 import { useState, useRef } from 'react'
 import { FileEarmarkPdf, PencilSquare, FileArrowUp, Trash, CheckLg, XLg, ArrowDownUp, ExclamationTriangleFill, CheckCircleFill } from 'react-bootstrap-icons'
-import { deleteSpreadsheet, updateSpreadsheetName, replaceSpreadsheetFile } from '@/app/actions/spreadsheet'
+import { deleteSpreadsheet, updateSpreadsheet, replaceSpreadsheetFile } from '@/app/actions/spreadsheet'
 
-export default function SpreadsheetList({ initialSpreadsheets, publicUrlBase }) {
+export default function SpreadsheetList({ initialSpreadsheets, vehicles }) {
   const [spreadsheets, setSpreadsheets] = useState(initialSpreadsheets)
   const [dateFilter, setDateFilter] = useState('all')
   const [sortDesc, setSortDesc] = useState(true)
+  
   const [editingId, setEditingId] = useState(null)
   const [editName, setEditName] = useState('')
+  const [editVehicleId, setEditVehicleId] = useState('')
+  
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState(null)
   
@@ -49,16 +52,22 @@ export default function SpreadsheetList({ initialSpreadsheets, publicUrlBase }) 
     }
   }
 
-  const handleSaveName = async (id) => {
+  const handleSave = async (id) => {
     setStatus(null)
     setLoading(true)
     try {
-      await updateSpreadsheetName(id, editName)
-      setSpreadsheets(spreadsheets.map(s => s.id === id ? { ...s, name: editName } : s))
+      await updateSpreadsheet(id, editName, editVehicleId)
+      
+      // Buscamos el vehículo modificado para actualizar la vista local
+      const assignedVehicle = vehicles?.find(v => v.id === editVehicleId) || null
+
+      setSpreadsheets(spreadsheets.map(s => 
+        s.id === id ? { ...s, name: editName, vehicle_id: editVehicleId || null, vehicles: assignedVehicle } : s
+      ))
       setEditingId(null)
-      setStatus({ type: 'success', msg: 'Nombre actualizado con éxito.' })
+      setStatus({ type: 'success', msg: 'Datos actualizados con éxito.' })
     } catch (err) {
-      setStatus({ type: 'danger', msg: 'No se pudo actualizar el nombre.' })
+      setStatus({ type: 'danger', msg: 'No se pudo actualizar la información.' })
     } finally {
       setLoading(false)
     }
@@ -133,26 +142,52 @@ export default function SpreadsheetList({ initialSpreadsheets, publicUrlBase }) 
           filteredAndSorted.map((spreadsheet) => (
             <div key={spreadsheet.id} className="list-group-item d-flex justify-content-between align-items-center p-3 shadow-sm mb-2 rounded border-0">
               
-              <div className="d-flex flex-column w-50">
+              <div className="d-flex flex-column w-75 me-3">
                 {editingId === spreadsheet.id ? (
-                  <div className="d-flex gap-2 align-items-center">
+                  <div className="d-flex flex-column flex-md-row gap-2 align-items-md-center">
                     <input 
                       type="text" 
                       className="form-control form-control-sm" 
                       value={editName} 
                       onChange={(e) => setEditName(e.target.value)} 
+                      placeholder="Nombre de planilla"
                     />
-                    <button className="btn btn-sm btn-success" onClick={() => handleSaveName(spreadsheet.id)} disabled={loading}><CheckLg /></button>
-                    <button className="btn btn-sm btn-light" onClick={() => setEditingId(null)} disabled={loading}><XLg /></button>
+                    <select 
+                      className="form-select form-select-sm" 
+                      value={editVehicleId} 
+                      onChange={(e) => setEditVehicleId(e.target.value)}
+                    >
+                      <option value="">Sin vehículo</option>
+                      {vehicles?.map(v => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                    <div className="d-flex gap-1">
+                      <button className="btn btn-sm btn-success" onClick={() => handleSave(spreadsheet.id)} disabled={loading}><CheckLg /></button>
+                      <button className="btn btn-sm btn-light" onClick={() => setEditingId(null)} disabled={loading}><XLg /></button>
+                    </div>
                   </div>
                 ) : (
-                  <h6 className="mb-1 fw-bold text-dark text-truncate" title={spreadsheet.name}>
-                    {spreadsheet.name}
-                  </h6>
+                  <>
+                    <div className="d-flex flex-column align-items-start gap-2 mb-1">
+                      <h6 className="m-0 fw-bold text-dark text-truncate" title={spreadsheet.name}>
+                        {spreadsheet.name}
+                      </h6>
+                      {spreadsheet.vehicles ? (
+                        <span className="badge bg-secondary" style={{ fontSize: '0.7em' }}>
+                          {spreadsheet.vehicles.name}
+                        </span>
+                      ) : (
+                        <span className="badge bg-light text-secondary border" style={{ fontSize: '0.7em' }}>
+                          Sin vehículo
+                        </span>
+                      )}
+                    </div>
+                    <small className="text-muted">
+                      Subido el: {new Date(spreadsheet.created_at).toLocaleDateString('es-CL')}
+                    </small>
+                  </>
                 )}
-                <small className="text-muted">
-                  Subido el: {new Date(spreadsheet.created_at).toLocaleDateString('es-CL')}
-                </small>
               </div>
 
               <div className="d-flex gap-2">
@@ -168,9 +203,13 @@ export default function SpreadsheetList({ initialSpreadsheets, publicUrlBase }) 
 
                 <button 
                   className="btn btn-sm btn-outline-warning" 
-                  onClick={() => { setEditingId(spreadsheet.id); setEditName(spreadsheet.name); }}
+                  onClick={() => { 
+                    setEditingId(spreadsheet.id); 
+                    setEditName(spreadsheet.name);
+                    setEditVehicleId(spreadsheet.vehicle_id || '');
+                  }}
                   disabled={loading}
-                  title="Editar nombre"
+                  title="Editar planilla"
                 >
                   <PencilSquare size={18} />
                 </button>

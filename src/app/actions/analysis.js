@@ -35,7 +35,8 @@ const getMidY = (token) => {
   return (Math.min(...ys) + Math.max(...ys)) / 2
 }
 
-export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, startPage = 2, endPage = null) {
+// ✨ Modificamos para recibir el vehicleId
+export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, startPage = 2, endPage = null, vehicleId = null) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   
@@ -49,7 +50,6 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
 
     const companies = await prisma.companies.findMany()
 
-    // Calcular límites globales para optimizar la consulta a la BD
     let globalStartDate = new Date('2099-01-01T00:00:00Z')
     let globalEndDate = new Date('1970-01-01T00:00:00Z')
     const parsedDates = {}
@@ -63,21 +63,26 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
       if (end > globalEndDate) globalEndDate = end
     }
 
-    // Traer vouchers usando el rango global
+    // Armamos el WHERE base
+    const whereClause = {
+      user_id: user.id,
+      voucher_date: {
+        gte: globalStartDate,
+        lte: globalEndDate
+      }
+    }
+
+    // ✨ Si hay un vehículo seleccionado, filtramos estrictamente por él
+    if (vehicleId) {
+      whereClause.vehicle_id = vehicleId
+    }
+
     const rawVouchers = await prisma.vouchers.findMany({
-      where: {
-        user_id: user.id,
-        voucher_date: {
-          gte: globalStartDate,
-          lte: globalEndDate
-        }
-      },
+      where: whereClause,
       include: { companies: true }
     })
 
-    // Filtrar estrictamente por el rango de cada mundo
     const userVouchers = rawVouchers.filter(v => {
-      // Si no tiene mundo o es un mundo excluido (no mapeado), lo aceptamos dentro del límite global
       if (!v.voucher_company_id) return true;
       
       const compDate = parsedDates[v.voucher_company_id]
@@ -160,22 +165,15 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
       }
 
       for (const line of lines) {
-        // 1. Buscamos si existe alguna fecha en la línea
         const dateIndex = line.tokens.findIndex(t => t.text.match(/\d{2}[-\/]\d{2}[-\/]\d{4}/))
         const fecha = dateIndex !== -1 ? line.tokens[dateIndex].text : "Sin fecha"
         
-        // 2. El ID del viaje casi siempre es el primer elemento de la fila
         let id_viaje = line.tokens[0].text
-        
-        // Si el primer elemento no tiene pinta de número/ID, nos saltamos la fila
         if (!id_viaje.match(/\d/)) continue 
 
-        // 3. Buscamos el monto
         let montoToken = null
         let montoText = "0" 
         
-        // Si pilló fecha, buscamos el monto DESPUÉS de la fecha. 
-        // Si no hay fecha, buscamos el monto DESPUÉS del ID (índice 1).
         let searchStart = dateIndex !== -1 ? dateIndex + 1 : 1;
         
         for (let k = searchStart; k < line.tokens.length; k++) {
@@ -233,6 +231,12 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
     const missingInProfile = extractedData.filter(item => !item.hubo_match)
     const execTimeSeconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(2))
 
+    // Guardamos si se analizó un vehículo en particular para mostrarlo después
+    let analyzedVehicle = null
+    if (vehicleId) {
+      analyzedVehicle = await prisma.vehicles.findUnique({ where: { id: vehicleId } })
+    }
+
     const newAnalysis = await prisma.analysis.create({
       data: {
         spreadsheet_id: spreadsheetId,
@@ -242,7 +246,8 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
         start_page: startPage,
         end_page: loopEnd,
         error_count: missingInPlanilla.length,
-        exec_time: execTimeSeconds
+        exec_time: execTimeSeconds,
+        vehicle_id: vehicleId // Lo guardamos en la tabla de análisis también si lo tienes en el schema
       }
     })
 
@@ -250,7 +255,7 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
 
     return { 
       success: true, 
-      data: { analysisId: newAnalysis.id, matched, missingInPlanilla, missingInProfile } 
+      data: { analysisId: newAnalysis.id, matched, missingInPlanilla, missingInProfile, analyzedVehicle } 
     }
   } catch (error) {
     await logAuditAction(user.id, false, `process spreadsheet analysis ${spreadsheetId}`)
@@ -277,9 +282,6 @@ export async function submitAnalysisFeedback(analysisId, isConforme) {
   }
 }
 
-// ... (tu código anterior en analysis.js)
-
-// ✨ NUEVO: Obtener URL firmada de la planilla
 export async function getSpreadsheetUrl(spreadsheetId) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -293,14 +295,13 @@ export async function getSpreadsheetUrl(spreadsheetId) {
 
   const { data, error } = await supabase.storage
     .from('vancheck-bucket')
-    .createSignedUrl(spreadsheet.file_url, 3600) // Válido por 1 hora
+    .createSignedUrl(spreadsheet.file_url, 3600) 
 
   if (error || !data) throw new Error('Error al generar enlace de la planilla')
   
   return data.signedUrl
 }
 
-// ✨ NUEVO: Generar PDF con los vouchers no pagados
 export async function generateUnpaidVouchersPdf(missingVouchersIds) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -330,20 +331,21 @@ export async function generateUnpaidVouchersPdf(missingVouchersIds) {
       if (error || !fileData) continue
 
       const imageBuffer = await fileData.arrayBuffer()
-      const ext = voucher.file_path.split('.').pop().toLowerCase()
       
       let image;
       try {
-        if (ext === 'png') {
-          image = await pdfDoc.embedPng(imageBuffer)
-        } else if (ext === 'jpg' || ext === 'jpeg') {
+        // ✨ EL TRUCO: Ignoramos la extensión. 
+        // Intentamos forzarlo como JPG (la mayoría terminan así tras comprimirse)
+        try {
           image = await pdfDoc.embedJpg(imageBuffer)
-        } else {
-          continue; // Si no es imagen soportada, la saltamos
+        } catch (jpgErr) {
+          // Si explota como JPG, le damos la chance de que sea PNG
+          image = await pdfDoc.embedPng(imageBuffer)
         }
       } catch (e) {
-        console.error(`Error procesando imagen ${voucher.id}:`, e)
-        continue;
+        // Si no es ni JPG ni PNG real (ej. un HEIC de iPhone sin comprimir), nos lo saltamos
+        console.error(`Formato no soportado o archivo corrupto para el voucher ${voucher.id}:`, e)
+        continue; 
       }
 
       // Escalar la imagen para que quepa en una página A4 estándar
@@ -366,7 +368,9 @@ export async function generateUnpaidVouchersPdf(missingVouchersIds) {
       })
     }
 
-    if (pdfDoc.getPageCount() === 0) throw new Error('No se pudo procesar ninguna imagen válida.')
+    if (pdfDoc.getPageCount() === 0) {
+      throw new Error('No se pudo procesar ninguna imagen. Es posible que estén en un formato no soportado (ej: HEIC, WEBP).')
+    }
 
     // 4. Guardar y codificar en Base64 para enviarlo al cliente
     const pdfBytes = await pdfDoc.save()

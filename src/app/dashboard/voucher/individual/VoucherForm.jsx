@@ -3,9 +3,10 @@
 import { useState } from 'react'
 import { submitVoucher } from '@/app/actions/voucher'
 import { CheckCircleFill, ExclamationTriangleFill } from 'react-bootstrap-icons'
-import imageCompression from 'browser-image-compression' // ✨ IMPORTAMOS LIBRERÍA
+import imageCompression from 'browser-image-compression' 
+import Link from 'next/link'
 
-export default function VoucherForm({ companies }) {
+export default function VoucherForm({ companies, vehicles }) {
   const [isManual, setIsManual] = useState(false)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -32,7 +33,6 @@ export default function VoucherForm({ companies }) {
         e.target.value = '' 
         return
       }
-
       setPreview(URL.createObjectURL(file))
     } else {
       setPreview(null)
@@ -48,31 +48,28 @@ export default function VoucherForm({ companies }) {
     
     formData.append('isManual', isManual)
 
-    // ✨ INICIO COMPRESIÓN DE IMAGEN
     if (!isManual) {
       const originalFile = formData.get('voucherImage')
       if (originalFile && originalFile.size > 0) {
         try {
           const options = {
-            maxSizeMB: 1, // Límite de 1MB
+            maxSizeMB: 1, 
             maxWidthOrHeight: 1920,
             useWebWorker: true,
           }
           const compressedFile = await imageCompression(originalFile, options)
-          // Reemplazamos el archivo pesado por el comprimido en el FormData
           formData.set('voucherImage', compressedFile)
         } catch (error) {
           console.error('Error al comprimir la imagen:', error)
-          // Si falla la compresión, mandará el original (o puedes tirar un error)
         }
       }
     }
-    // ✨ FIN COMPRESIÓN
 
     try {
       const result = await submitVoucher(formData)
       if (result?.success) {
         setSuccessMsg(result.message)
+        setPreview(null)
       }
     } catch (error) {
       setErrorMsg(error.message)
@@ -99,103 +96,127 @@ export default function VoucherForm({ companies }) {
           </div>
         )}
 
-        <div className="form-check form-switch mb-4">
-          <input 
-            className="form-check-input" 
-            type="checkbox" 
-            role="switch" 
-            id="manualToggle" 
-            checked={isManual}
-            onChange={(e) => {
-              setIsManual(e.target.checked)
-              setSuccessMsg('')
-              setErrorMsg('') 
-            }}
-            style={{ cursor: 'pointer' }}
-          />
-          <label className="form-check-label fw-medium" htmlFor="manualToggle" style={{ cursor: 'pointer' }}>
-            Prefiero crearlo de forma manual
-          </label>
-        </div>
-
-        <form action={handleSubmit}>
-          {!isManual ? (
-            <div className="mb-3 animate__animated animate__fadeIn">
-              <label htmlFor="voucherImage" className="form-label fw-semibold text-secondary">
-                Sube la foto de tu Voucher (Solo Imágenes)
-              </label>
+        {vehicles.length === 0 ? (
+          <div className="alert alert-warning shadow-sm border-0 d-flex flex-column align-items-center text-center p-4">
+            <ExclamationTriangleFill size={40} className="text-warning mb-3" />
+            <h5 className="fw-bold mb-2">Vehículo Requerido</h5>
+            <p className="mb-3">Debe tener al menos un vehículo registrado en el sistema para poder subir vouchers.</p>
+            <Link href="/dashboard/vehicle" className="btn btn-warning fw-medium">
+              Registrar Vehículo Ahora
+            </Link>
+          </div>
+        ) : (
+          <>
+            <div className="form-check form-switch mb-4">
               <input 
-                className="form-control" 
-                type="file" 
-                id="voucherImage" 
-                name="voucherImage"
-                accept="image/*" 
-                onChange={handleImageChange}
-                required={!isManual}
+                className="form-check-input" 
+                type="checkbox" 
+                role="switch" 
+                id="manualToggle" 
+                checked={isManual}
+                onChange={(e) => {
+                  setIsManual(e.target.checked)
+                  setSuccessMsg('')
+                  setErrorMsg('') 
+                }}
+                style={{ cursor: 'pointer' }}
               />
-              
-              {preview && (
-                <div className="mt-4 text-center">
-                  <p className="text-muted small mb-2">Previsualización:</p>
-                  <img 
-                    src={preview} 
-                    alt="Previsualización del voucher" 
-                    className="img-fluid rounded shadow-sm border" 
-                    style={{ maxHeight: '300px', objectFit: 'contain' }} 
-                  />
-                </div>
-              )}
+              <label className="form-check-label fw-medium" htmlFor="manualToggle" style={{ cursor: 'pointer' }}>
+                Prefiero crearlo de forma manual
+              </label>
             </div>
-          ) : (
-            <div className="row g-3 animate__animated animate__fadeIn">
-              <div className="col-12 col-md-4">
-                <label htmlFor="identifier" className="form-label fw-semibold text-secondary">Identificador</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  id="identifier" 
-                  name="identifier" 
-                  placeholder="Ej: VCH-123" 
-                  required={isManual}
-                />
-              </div>
-              
-              <div className="col-12 col-md-4">
-                <label htmlFor="date" className="form-label fw-semibold text-secondary">Fecha</label>
-                <input 
-                  type="date" 
-                  className="form-control" 
-                  id="date" 
-                  name="date" 
-                  required={isManual}
-                />
-              </div>
 
-              <div className="col-12 col-md-4">
-                <label htmlFor="company" className="form-label fw-semibold text-secondary">Mundo</label>
-                <select 
-                  className="form-select" 
-                  id="company" 
-                  name="company_id" 
-                  required={isManual}
-                >
-                  <option value="">Selecciona una opción...</option>
-                  {companies.map((company) => (
-                    <option key={company.id} value={company.id}>
-                      {company.name}
-                    </option>
+            <form action={handleSubmit}>
+              
+              <div className="mb-4 animate__animated animate__fadeIn">
+                <label htmlFor="vehicle_id" className="form-label fw-semibold text-secondary">Vehículo Asignado</label>
+                <select className="form-select" id="vehicle_id" name="vehicle_id" required>
+                  <option value="">Selecciona un vehículo...</option>
+                  {vehicles.map(v => (
+                    <option key={v.id} value={v.id}>{v.name} ({v.patent})</option>
                   ))}
                 </select>
               </div>
-            </div>
-          )}
 
-          <div className="d-flex justify-content-end mt-4">
-            <button type="submit" className="btn btn-primary px-4 fw-medium" disabled={loading || (errorMsg && !isManual)}>
-              {loading ? 'Procesando...' : 'Guardar Voucher'}
-            </button>
-          </div>
-        </form>
+              {!isManual ? (
+                <div className="mb-3 animate__animated animate__fadeIn">
+                  <label htmlFor="voucherImage" className="form-label fw-semibold text-secondary">
+                    Sube la foto de tu Voucher (Solo Imágenes)
+                  </label>
+                  <input 
+                    className="form-control" 
+                    type="file" 
+                    id="voucherImage" 
+                    name="voucherImage"
+                    accept="image/*" 
+                    onChange={handleImageChange}
+                    required={!isManual}
+                  />
+                  
+                  {preview && (
+                    <div className="mt-4 text-center">
+                      <p className="text-muted small mb-2">Previsualización:</p>
+                      <img 
+                        src={preview} 
+                        alt="Previsualización del voucher" 
+                        className="img-fluid rounded shadow-sm border" 
+                        style={{ maxHeight: '300px', objectFit: 'contain' }} 
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="row g-3 animate__animated animate__fadeIn">
+                  <div className="col-12 col-md-4">
+                    <label htmlFor="identifier" className="form-label fw-semibold text-secondary">Identificador</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      id="identifier" 
+                      name="identifier" 
+                      placeholder="Ej: VCH-123" 
+                      required={isManual}
+                    />
+                  </div>
+                  
+                  <div className="col-12 col-md-4">
+                    <label htmlFor="date" className="form-label fw-semibold text-secondary">Fecha</label>
+                    <input 
+                      type="date" 
+                      className="form-control" 
+                      id="date" 
+                      name="date" 
+                      required={isManual}
+                    />
+                  </div>
+
+                  <div className="col-12 col-md-4">
+                    <label htmlFor="company" className="form-label fw-semibold text-secondary">Mundo</label>
+                    <select 
+                      className="form-select" 
+                      id="company" 
+                      name="company_id" 
+                      required={isManual}
+                    >
+                      <option value="">Selecciona una opción...</option>
+                      {companies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="d-flex justify-content-end mt-4">
+                <button type="submit" className="btn btn-primary px-4 fw-medium" disabled={loading || errorMsg}>
+                  {loading ? 'Procesando...' : 'Guardar Voucher'}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
 
       </div>
     </div>

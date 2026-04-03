@@ -4,10 +4,11 @@ import { useState } from 'react'
 import { PencilSquare, Trash, CheckLg, XLg, ArrowDownUp, Eye, Search, ExclamationTriangleFill } from 'react-bootstrap-icons'
 import { deleteVoucherRecord, updateVoucherRecord, getVoucherImageUrl } from '@/app/actions/voucher'
 
-export default function VoucherList({ initialVouchers, companies }) {
+export default function VoucherList({ initialVouchers, companies, vehicles }) {
   const [vouchers, setVouchers] = useState(initialVouchers)
   const [dateFilter, setDateFilter] = useState('all') 
-  const [companyFilter, setCompanyFilter] = useState('all') // ✨ NUEVO: Estado para el filtro de mundo
+  const [companyFilter, setCompanyFilter] = useState('all') 
+  const [vehicleFilter, setVehicleFilter] = useState('all') // ✨ NUEVO: Filtro de vehículo
   const [sortDesc, setSortDesc] = useState(true)
   const [searchTerm, setSearchTerm] = useState('') 
   const [editingId, setEditingId] = useState(null)
@@ -30,14 +31,13 @@ export default function VoucherList({ initialVouchers, companies }) {
   }
 
   const filteredAndSortedVouchers = vouchers.filter(v => {
-    // 1. Filtro por búsqueda
     const matchesSearch = v.voucher_number.toLowerCase().includes(searchTerm.toLowerCase())
     if (!matchesSearch) return false
 
-    // 2. ✨ NUEVO: Filtro por mundo (Company)
     if (companyFilter !== 'all' && v.voucher_company_id !== companyFilter) return false
+    
+    if (vehicleFilter !== 'all' && v.vehicle_id !== vehicleFilter) return false
 
-    // 3. Filtro por fecha
     if (dateFilter === 'all') return true
     
     const vDate = new Date(v.voucher_date).getTime()
@@ -86,7 +86,9 @@ export default function VoucherList({ initialVouchers, companies }) {
             voucher_number: formData.get('identifier'),
             voucher_date: new Date(formData.get('date')),
             voucher_company_id: formData.get('company_id'),
-            companies: companies.find(c => c.id === formData.get('company_id'))
+            vehicle_id: formData.get('vehicle_id'),
+            companies: companies.find(c => c.id === formData.get('company_id')),
+            vehicles: vehicles.find(vh => vh.id === formData.get('vehicle_id'))
           }
         }
         return v
@@ -125,7 +127,7 @@ export default function VoucherList({ initialVouchers, companies }) {
 
   return (
     <div className="mt-5 animate__animated animate__fadeIn">
-      <h2 className="h4 fw-bold text-dark mb-4 border-bottom pb-2">Mis Vouchers</h2>
+      <h2 className="h4 fw-bold text-dark mb-4 border-bottom pb-2">Listado de Vouchers</h2>
 
       {errorMessage && (
         <div className="alert alert-danger shadow-sm d-flex align-items-center gap-2 mb-4 animate__animated animate__headShake">
@@ -135,8 +137,7 @@ export default function VoucherList({ initialVouchers, companies }) {
       )}
 
       <div className="row g-3 mb-4">
-        {/* Barra de búsqueda */}
-        <div className="col-12 col-md-4">
+        <div className="col-12 col-md-3">
           <div className="input-group shadow-sm">
             <span className="input-group-text bg-white text-muted border-end-0">
               <Search size={16} />
@@ -144,17 +145,15 @@ export default function VoucherList({ initialVouchers, companies }) {
             <input 
               type="text" 
               className="form-control border-start-0 ps-0" 
-              placeholder="Buscar por ID..." 
+              placeholder="Buscar ID..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
 
-        {/* Contenedor de Filtros (flex-wrap para que se acomoden bien en celu) */}
-        <div className="col-12 col-md-8 d-flex gap-2 justify-content-md-end flex-wrap">
+        <div className="col-12 col-md-9 d-flex gap-2 justify-content-md-end flex-wrap">
           
-          {/* ✨ NUEVO: Select de Mundo (Company) */}
           <select 
             className="form-select w-auto shadow-sm" 
             value={companyFilter} 
@@ -166,7 +165,18 @@ export default function VoucherList({ initialVouchers, companies }) {
             ))}
           </select>
 
-          {/* Select de Fecha */}
+          {/* ✨ NUEVO: Select de Vehículo */}
+          <select 
+            className="form-select w-auto shadow-sm" 
+            value={vehicleFilter} 
+            onChange={(e) => setVehicleFilter(e.target.value)}
+          >
+            <option value="all">Todos los vehículos</option>
+            {vehicles.map(v => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+
           <select 
             className="form-select w-auto shadow-sm" 
             value={dateFilter} 
@@ -179,13 +189,12 @@ export default function VoucherList({ initialVouchers, companies }) {
             <option value="year">Último año</option>
           </select>
 
-          {/* Botón de Orden */}
           <button 
             className="btn btn-outline-secondary d-flex align-items-center gap-2 shadow-sm"
             onClick={() => setSortDesc(!sortDesc)}
           >
             <ArrowDownUp size={16} />
-            <span className="d-none d-sm-inline">{sortDesc ? 'Descend' : 'Ascend'}</span>
+            <span className="d-none d-sm-inline">{sortDesc ? 'Desc' : 'Asc'}</span>
           </button>
         </div>
       </div>
@@ -219,11 +228,20 @@ export default function VoucherList({ initialVouchers, companies }) {
                       />
                       <select 
                         name="company_id" 
-                        className="form-select form-select-sm mb-3" 
+                        className="form-select form-select-sm mb-2" 
                         defaultValue={voucher.voucher_company_id} 
                         required
                       >
                         {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <select 
+                        name="vehicle_id" 
+                        className="form-select form-select-sm mb-3 border-primary" 
+                        defaultValue={voucher.vehicle_id} 
+                        required
+                      >
+                        <option value="">Seleccione vehículo</option>
+                        {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.patent})</option>)}
                       </select>
                       
                       <div className="d-flex gap-2 justify-content-end">
@@ -238,9 +256,14 @@ export default function VoucherList({ initialVouchers, companies }) {
                   ) : (
                     <>
                       <div className="d-flex justify-content-between align-items-start mb-2">
-                        <span className="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle">
-                          {voucher.companies?.name || 'Sin Mundo'}
-                        </span>
+                        <div className="d-flex flex-column gap-1">
+                          <span className="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle align-self-start">
+                            {voucher.companies?.name || 'Sin Mundo'}
+                          </span>
+                          <span className="badge bg-secondary align-self-start" style={{ fontSize: '0.7em' }}>
+                            {voucher.vehicles ? `${voucher.vehicles.name}` : 'Sin Vehículo'}
+                          </span>
+                        </div>
                         <div className="d-flex gap-2">
                           <button 
                             className="btn btn-sm btn-outline-info border-0" 
@@ -268,7 +291,7 @@ export default function VoucherList({ initialVouchers, companies }) {
                           </button>
                         </div>
                       </div>
-                      <h5 className="card-title text-dark fw-bold mb-1 text-truncate" title={voucher.voucher_number}>
+                      <h5 className="card-title text-dark fw-bold mb-1 text-truncate mt-3" title={voucher.voucher_number}>
                         {highlightMatch(voucher.voucher_number, searchTerm)}
                       </h5>
                       <p className="card-text text-muted small mb-0">

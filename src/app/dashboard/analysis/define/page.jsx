@@ -41,8 +41,10 @@ export default async function DefineAnalysisPage({ searchParams }) {
     )
   }
 
+  // Traemos la planilla y también vemos si tiene vehículo asociado
   const spreadsheet = await prisma.spreadsheets.findUnique({
-    where: { id: spreadsheetId }
+    where: { id: spreadsheetId },
+    include: { vehicles: true }
   })
 
   if (!spreadsheet || spreadsheet.user_id !== user.id) {
@@ -54,6 +56,12 @@ export default async function DefineAnalysisPage({ searchParams }) {
     where: {
       name: { notIn: ['BASE AEROPUERTO', 'TRIPULACION'] }
     },
+    orderBy: { name: 'asc' }
+  })
+
+  // Traemos los vehículos del usuario para el select
+  const vehicles = await prisma.vehicles.findMany({
+    where: { user_id: user.id },
     orderBy: { name: 'asc' }
   })
 
@@ -71,7 +79,8 @@ export default async function DefineAnalysisPage({ searchParams }) {
           Estás configurando el análisis para la planilla: <strong>{spreadsheet.name}</strong>
         </div>
         
-        <DefineForm spreadsheetId={spreadsheet.id} companies={companies} />
+        {/* Pasamos spreadsheet completo y los vehículos */}
+        <DefineForm spreadsheet={spreadsheet} companies={companies} vehicles={vehicles} />
       </section>
     </main>
   )
