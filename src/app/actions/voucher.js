@@ -307,7 +307,12 @@ export async function processSingleMassiveVoucher(formData) {
   const arrayBuffer = await file.arrayBuffer()
   const encodedImage = Buffer.from(arrayBuffer).toString('base64')
 
-  const documentAiClient = new DocumentProcessorServiceClient()
+  const documentAiClient = new DocumentProcessorServiceClient({
+  credentials: {
+    client_email: process.env.GCP_CLIENT_EMAIL,
+    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  }
+})
   const name = `projects/${process.env.GOOGLE_CLOUD_PROJECT_ID}/locations/${process.env.GOOGLE_DOCUMENT_AI_LOCATION}/processors/${process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID}`
 
   const request = {
