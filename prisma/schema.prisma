@@ -62,37 +62,42 @@ model support {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model users {
-  id           String         @id @db.Uuid
-  rut          String         @unique @db.VarChar(9)
-  name         String
-  last_name    String
-  email        String         @unique
-  tel          String?        @db.VarChar(9)
-  is_allowed   Boolean        @default(false)
-  is_admin     Boolean        @default(false)
-  analysis     analysis[]
-  audit_logs   audit_logs[]
-  auth_logs    auth_logs[]
-  spreadsheets spreadsheets[]
-  support      support[]
-  vehicles     vehicles[]
-  vouchers     vouchers[]
+  id                                   String         @id @db.Uuid
+  rut                                  String         @unique @db.VarChar(9)
+  name                                 String
+  last_name                            String
+  email                                String         @unique
+  tel                                  String?        @db.VarChar(9)
+  is_allowed                           Boolean        @default(false)
+  is_admin                             Boolean        @default(false)
+  analysis                             analysis[]
+  audit_logs                           audit_logs[]
+  auth_logs                            auth_logs[]
+  spreadsheets                         spreadsheets[]
+  support                              support[]
+  vehicles                             vehicles[]
+  vouchers                             vouchers[]
+  vouchers_vouchers_verified_byTousers vouchers[]     @relation("vouchers_verified_byTousers")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model vouchers {
-  id                 String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  voucher_number     String
-  voucher_date       DateTime   @db.Date
-  voucher_company_id String?    @db.Uuid
-  user_id            String?    @db.Uuid
-  created_at         DateTime   @default(now()) @db.Timestamp(6)
-  file_path          String?
-  ai_success         Boolean?
-  vehicle_id         String     @db.Uuid
-  users              users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  vehicles           vehicles   @relation(fields: [vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  companies          companies? @relation(fields: [voucher_company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  voucher_number                    String
+  voucher_date                      DateTime   @db.Date
+  voucher_company_id                String?    @db.Uuid
+  user_id                           String?    @db.Uuid
+  created_at                        DateTime   @default(now()) @db.Timestamp(6)
+  file_path                         String?
+  ai_success                        Boolean?
+  vehicle_id                        String     @db.Uuid
+  is_verified                       Boolean    @default(false)
+  verified_by                       String?    @db.Uuid
+  verified_at                       DateTime?  @db.Timestamp(6)
+  users                             users?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vehicles                          vehicles   @relation(fields: [vehicle_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_vouchers_verified_byTousers users?     @relation("vouchers_verified_byTousers", fields: [verified_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  companies                         companies? @relation(fields: [voucher_company_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
