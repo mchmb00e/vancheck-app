@@ -156,11 +156,24 @@ export default function ExtractViewPage() {
       </header>
 
       {/* ✨ RECUADRO INFORMATIVO DEL VEHÍCULO ANALIZADO */}
-      <div className="alert alert-secondary border-0 shadow-sm mb-4 d-flex align-items-center gap-3 animate__animated animate__fadeIn">
+      <div className="alert alert-secondary border-0 shadow-sm mb-3 d-flex align-items-center gap-3 animate__animated animate__fadeIn">
         <InfoCircleFill size={24} className="text-secondary flex-shrink-0" />
         <div className="fs-6">
           <span className="text-muted d-block small">Contexto del Análisis:</span>
           <strong>Vehículo:</strong> {analisis.analyzedVehicle ? `${analisis.analyzedVehicle.name} (${analisis.analyzedVehicle.patent})` : 'Todos los vehículos registrados'}
+        </div>
+      </div>
+
+      {/* ✨ NUEVO RECUADRO DE ADVERTENCIA IA */}
+      <div className="alert alert-warning border-0 shadow-sm mb-4 d-flex align-items-start gap-3 animate__animated animate__fadeIn">
+        <ExclamationTriangleFill size={24} className="text-warning flex-shrink-0 mt-1" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.2))' }} />
+        <div className="fs-6 text-dark">
+          <p className="mb-2">
+            Este análisis funciona bajo un modelo de inteligencia artificial, por lo que los resultados, así como el escaneo automático de vouchers y planillas podrían tener errores. Se trabaja continuamente para reducir esta tasa de fallo.
+          </p>
+          <p className="mb-0 fw-medium small text-muted">
+            Al ser una herramienta de ayuda (análisis de datos), se recomienda revisar de forma manual si los resultados son correctos.
+          </p>
         </div>
       </div>
 
