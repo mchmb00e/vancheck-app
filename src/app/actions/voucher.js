@@ -7,13 +7,16 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { revalidatePath } from 'next/cache'
 import { logAuditAction } from '@/app/actions/logs'
 
-
-const documentAiClient = new DocumentProcessorServiceClient({
-  credentials: {
-    client_email: process.env.GCP_CLIENT_EMAIL,
-    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  }
-})
+// ✨ Función segura para generar el cliente en Railway
+const getDocumentAiClient = () => {
+  return new DocumentProcessorServiceClient({
+    projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+    credentials: {
+      client_email: process.env.GCP_CLIENT_EMAIL,
+      private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }
+  })
+}
 
 export async function submitVoucher(formData) {
   const supabase = await createClient()
@@ -61,36 +64,41 @@ export async function submitVoucher(formData) {
     throw new Error('Solo puedes subir una imagen a la vez.')
   }
 
-  const file = files[0]
+  const compressedFile = files[0]
+  // Obtenemos la original si existe; si no, usamos la comprimida por seguridad
+  const highResFile = formData.get('highResImage') || compressedFile
 
-  if (!file.type.startsWith('image/')) {
+  if (!compressedFile.type.startsWith('image/')) {
     throw new Error('El archivo seleccionado no es una imagen válida.')
   }
 
   const voucherId = crypto.randomUUID()
-  const ext = file.name.split('.').pop()
+  const ext = compressedFile.name.split('.').pop()
   const fileName = `${voucherId}.${ext}`
   const filePath = `vouchers/${fileName}`
 
+  // 1. Subimos solo la versión LIVIANA a Supabase
   const { error: uploadError } = await supabase.storage
     .from('vancheck-bucket')
-    .upload(filePath, file)
+    .upload(filePath, compressedFile)
 
   if (uploadError) {
     throw new Error('No se pudo subir la imagen al bucket')
   }
 
-  const arrayBuffer = await file.arrayBuffer()
+  // 2. Preparamos la versión PESADA original para Google
+  const arrayBuffer = await highResFile.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
   const encodedImage = buffer.toString('base64')
 
+  const documentAiClient = getDocumentAiClient()
   const name = `projects/${process.env.GOOGLE_CLOUD_PROJECT_ID}/locations/${process.env.GOOGLE_DOCUMENT_AI_LOCATION}/processors/${process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID}`
 
   const request = {
     name,
     rawDocument: {
       content: encodedImage,
-      mimeType: file.type,
+      mimeType: highResFile.type,
     }
   }
 
@@ -289,35 +297,33 @@ export async function processSingleMassiveVoucher(formData) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('No estás autorizado')
 
-  const file = formData.get('file')
+  const compressedFile = formData.get('file')
+  const highResFile = formData.get('highResFile') || compressedFile
   const vehicle_id = formData.get('vehicle_id')?.toString()
   
-  if (!file || file.size === 0) throw new Error('Archivo inválido')
+  if (!compressedFile || compressedFile.size === 0) throw new Error('Archivo inválido')
   if (!vehicle_id) throw new Error('Falta el vehículo asociado')
 
   const voucherId = crypto.randomUUID()
-  const ext = file.name.split('.').pop()
+  const ext = compressedFile.name.split('.').pop()
   const filePath = `vouchers/${voucherId}.${ext}`
 
+  // 1. Subimos la versión LIVIANA a Supabase
   const { error: uploadError } = await supabase.storage
     .from('vancheck-bucket')
-    .upload(filePath, file)
+    .upload(filePath, compressedFile)
   if (uploadError) throw new Error('Error al subir imagen')
 
-  const arrayBuffer = await file.arrayBuffer()
+  // 2. Preparamos la versión PESADA para Google
+  const arrayBuffer = await highResFile.arrayBuffer()
   const encodedImage = Buffer.from(arrayBuffer).toString('base64')
 
-  const documentAiClient = new DocumentProcessorServiceClient({
-  credentials: {
-    client_email: process.env.GCP_CLIENT_EMAIL,
-    private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-  }
-})
+  const documentAiClient = getDocumentAiClient()
   const name = `projects/${process.env.GOOGLE_CLOUD_PROJECT_ID}/locations/${process.env.GOOGLE_DOCUMENT_AI_LOCATION}/processors/${process.env.GOOGLE_DOCUMENT_AI_PROCESSOR_ID}`
 
   const request = {
     name,
-    rawDocument: { content: encodedImage, mimeType: file.type }
+    rawDocument: { content: encodedImage, mimeType: highResFile.type }
   }
 
   const [result] = await documentAiClient.processDocument(request)
@@ -386,7 +392,6 @@ export async function confirmMassiveBatch(vouchersData) {
   if (!user) throw new Error('No autorizado')
 
   try {
-    // 1. Validaciones
     for (const v of vouchersData) {
       if (!v.extractedId || v.extractedId.trim() === '') {
         return { success: false, error: 'Hay vouchers sin ID de viaje. Por favor, revisa los campos en rojo.' }
@@ -396,7 +401,6 @@ export async function confirmMassiveBatch(vouchersData) {
       }
     }
 
-    // 2. Ejecutar en paralelo pero en lotes de 50 (Rápido y Seguro a la vez)
     const chunkSize = 50;
     
     for (let i = 0; i < vouchersData.length; i += chunkSize) {
@@ -415,7 +419,6 @@ export async function confirmMassiveBatch(vouchersData) {
         })
       );
       
-      // Volvemos a tu lógica original que SÍ funcionaba, procesando el lote en paralelo
       await Promise.all(updatePromises);
     }
 

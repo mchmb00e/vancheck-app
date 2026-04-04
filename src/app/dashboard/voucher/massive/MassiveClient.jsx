@@ -74,20 +74,21 @@ export default function MassiveClient({ companies, vehicles }) {
         const item = files[index]
         
         try {
-          let fileToUpload = item.file
+          let compressedFile = item.file
           try {
             const options = {
               maxSizeMB: 1, 
               maxWidthOrHeight: 1920,
               useWebWorker: true
             }
-            fileToUpload = await imageCompression(item.file, options)
+            compressedFile = await imageCompression(item.file, options)
           } catch (compErr) {
             console.error('Error al comprimir, subiendo original:', compErr)
           }
 
           const formData = new FormData()
-          formData.append('file', fileToUpload) 
+          formData.append('file', compressedFile) 
+          formData.append('highResFile', item.file) 
           formData.append('vehicle_id', globalVehicleId) 
           
           const res = await processSingleMassiveVoucher(formData)

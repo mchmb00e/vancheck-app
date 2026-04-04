@@ -59,6 +59,7 @@ export default function VoucherForm({ companies, vehicles }) {
           }
           const compressedFile = await imageCompression(originalFile, options)
           formData.set('voucherImage', compressedFile)
+          formData.append('highResImage', originalFile) // El original intacto para Google
         } catch (error) {
           console.error('Error al comprimir la imagen:', error)
         }
