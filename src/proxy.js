@@ -43,8 +43,9 @@ export async function proxy(request) {
   const isCallbackRoute = pathname.startsWith('/auth/callback')
   const isRoot = pathname === '/'
   
-  // Identificamos si la ruta es alguna de análisis
+  // Identificamos las rutas protegidas por roles
   const isAnalysisRoute = pathname.startsWith('/dashboard/analysis')
+  const isAdminRoute = pathname.startsWith('/dashboard/admin')
 
   // 1. Si no hay usuario y trata de entrar a rutas protegidas -> pa' fuera
   if (!user && !isAuthRoute && !isCallbackRoute && !isRoot) {
@@ -60,17 +61,31 @@ export async function proxy(request) {
     return NextResponse.redirect(url)
   }
 
-  // 3. LA BARRERA DE SEGURIDAD: Si está logueado y quiere entrar a análisis
-  if (user && isAnalysisRoute) {
-    // Usamos maybeSingle() en vez de single() para que no tire error si hay 0 resultados
+  // 3. LA BARRERA DE SEGURIDAD: Si está logueado y quiere entrar a análisis o admin
+  if (user && (isAnalysisRoute || isAdminRoute)) {
+    // Traemos ambos permisos en la misma consulta para optimizar
     const { data: userData, error } = await supabase
       .from('users')
-      .select('is_allowed')
+      .select('is_allowed, is_admin')
       .eq('id', user.id)
       .maybeSingle()
 
-    // Si userData es nulo, o si is_allowed es falso, lo rebotamos
-    if (!userData || userData.is_allowed === false) {
+    // Si userData es nulo (no se encontró el usuario en la tabla), lo rebotamos por precaución
+    if (!userData) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+
+    // Barrera para rutas de análisis
+    if (isAnalysisRoute && userData.is_allowed === false) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+
+    // Barrera para rutas de administrador
+    if (isAdminRoute && userData.is_admin === false) {
       const url = request.nextUrl.clone()
       url.pathname = '/dashboard'
       return NextResponse.redirect(url)

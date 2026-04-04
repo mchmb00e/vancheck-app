@@ -12,7 +12,8 @@ import {
   Person,
   BoxArrowRight,
   Whatsapp,
-  CarFront
+  CarFront,
+  Unlock2Fill
 } from 'react-bootstrap-icons'
 
 export const metadata = {
@@ -128,6 +129,17 @@ export default async function DashboardPage({ searchParams }) {
             path="/dashboard/profile"
             icon={<Person className="text-black" size={24} />}
           />
+          {
+            (perfil.is_admin) ?
+            <Item
+              title="Administrador"
+              description="Gestiona información general de la aplicación."
+              path="/dashboard/admin"
+              icon={<Unlock2Fill className="text-black" size={24} />}
+            />
+            :
+            null
+          }
         </div>
 
         <hr className="my-4 text-secondary opacity-25" />
