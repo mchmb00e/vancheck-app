@@ -9,10 +9,13 @@ import {
   ChevronRight, 
   ExclamationTriangle,
   CardImage,
-  PlayCircle
+  PlayCircle,
+  Search,
+  Filter
 } from 'react-bootstrap-icons'
 
-export default function VerifyClient({ companies }) {
+// ✨ Recibimos users como prop
+export default function VerifyClient({ companies, users }) {
   const [vouchers, setVouchers] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -23,6 +26,12 @@ export default function VerifyClient({ companies }) {
   
   const [imageUrl, setImageUrl] = useState(null)
   const [isImageLoading, setIsImageLoading] = useState(false)
+
+  // ✨ NUEVOS ESTADOS PARA FILTROS
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterCompany, setFilterCompany] = useState('')
+  const [filterUser, setFilterUser] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
 
   const [formData, setFormData] = useState({
     voucher_number: '',
@@ -36,16 +45,28 @@ export default function VerifyClient({ companies }) {
     transform: 'scale(1)' 
   })
 
-  // Función salvavidas para formatear la fecha sin que la zona horaria nos moleste
   const formatSafeDate = (isoDateString) => {
     if (!isoDateString) return null;
-    // Extrae "YYYY-MM-DD", lo separa, lo da vuelta a "DD, MM, YYYY" y lo une con "/"
     return new Date(isoDateString).toISOString().split('T')[0].split('-').reverse().join('/');
   }
 
+  // ✨ Efecto de Debounce para no saturar al escribir
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // ✨ Efecto que gatilla la búsqueda al cambiar filtros o página
   useEffect(() => {
     fetchVouchers(page)
-  }, [page])
+  }, [page, debouncedSearch, filterCompany, filterUser])
+
+  // Resetear a página 1 si cambian los filtros
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch, filterCompany, filterUser])
 
   useEffect(() => {
     async function fetchImage() {
@@ -64,14 +85,17 @@ export default function VerifyClient({ companies }) {
         setImageUrl(null)
       }
     }
-
     fetchImage()
   }, [selectedVoucher?.file_path])
 
   const fetchVouchers = async (currentPage) => {
     setIsLoadingList(true)
     try {
-      const { vouchers: data, total: totalCount } = await getPendingVouchers(currentPage)
+      const { vouchers: data, total: totalCount } = await getPendingVouchers(currentPage, {
+        search: debouncedSearch,
+        companyId: filterCompany,
+        userId: filterUser
+      })
       setVouchers(data)
       setTotal(totalCount)
     } catch (error) {
@@ -147,8 +171,50 @@ export default function VerifyClient({ companies }) {
       
       {/* 1. ASIDE IZQUIERDO: Lista de Vouchers */}
       <div className="col-12 col-lg-3 border-end p-0 d-flex flex-column bg-light h-100">
-        <div className="p-3 border-bottom bg-white d-flex justify-content-between align-items-center">
-          <span className="fw-semibold">Por revisar ({total})</span>
+        
+        {/* ✨ SECCIÓN DE FILTROS */}
+        <div className="p-3 bg-white border-bottom shadow-sm z-1">
+          <div className="input-group input-group-sm mb-2">
+            <span className="input-group-text bg-white text-muted"><Search size={14}/></span>
+            <input 
+              type="text" 
+              className="form-control" 
+              placeholder="Buscar ID de voucher..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <div className="d-flex flex-column gap-2">
+            <select 
+              className="form-select form-select-sm" 
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+            >
+              <option value="">Todos los mundos</option>
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c._count.vouchers})
+                </option>
+              ))}
+            </select>
+            
+            <select 
+              className="form-select form-select-sm" 
+              value={filterUser}
+              onChange={(e) => setFilterUser(e.target.value)}
+            >
+              <option value="">Todos los usuarios</option>
+              {users.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.name} {u.last_name} | {u.rut}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="p-2 border-bottom bg-light d-flex justify-content-between align-items-center">
+          <span className="fw-semibold small">Resultados ({total})</span>
           <div className="btn-group btn-group-sm">
             <button 
               className="btn btn-outline-secondary" 
@@ -157,7 +223,7 @@ export default function VerifyClient({ companies }) {
             >
               <ChevronLeft />
             </button>
-            <span className="btn btn-outline-secondary disabled px-3 text-dark">
+            <span className="btn btn-outline-secondary disabled px-2 text-dark" style={{fontSize: '0.8rem'}}>
               {page} / {totalPages || 1}
             </span>
             <button 
@@ -170,11 +236,11 @@ export default function VerifyClient({ companies }) {
           </div>
         </div>
 
-        <div className="overflow-auto flex-grow-1 p-2" style={{ maxHeight: '75vh' }}>
+        <div className="overflow-auto flex-grow-1 p-2" style={{ maxHeight: 'calc(85vh - 120px)' }}>
           {isLoadingList ? (
             <div className="text-center py-4 text-secondary">Cargando vouchers...</div>
           ) : vouchers.length === 0 ? (
-            <div className="text-center py-4 text-secondary">¡Filete! No hay vouchers pendientes.</div>
+            <div className="text-center py-4 text-secondary">¡Filete! No se encontraron vouchers.</div>
           ) : (
             <div className="list-group list-group-flush gap-1">
               {vouchers.map(v => (
@@ -185,8 +251,7 @@ export default function VerifyClient({ companies }) {
                 >
                   <div className="d-flex w-100 justify-content-between align-items-center">
                     <div className="text-truncate">
-                      <h6 className="mb-1 text-truncate">Nº {v.voucher_number || 'Sin número'}</h6>
-                      {/* Arreglado el problema de zona horaria aquí */}
+                      <h6 className="mb-1 text-truncate" style={{fontSize: '0.9rem'}}>Nº {v.voucher_number || 'Sin número'}</h6>
                       <small className={selectedVoucher?.id === v.id ? 'text-light opacity-75' : 'text-muted'}>
                         {v.voucher_date ? formatSafeDate(v.voucher_date) : 'Sin fecha'}
                       </small>
@@ -263,7 +328,6 @@ export default function VerifyClient({ companies }) {
                 <h6 className="text-uppercase text-muted mb-2" style={{ fontSize: '0.8rem' }}>Datos escaneados por IA</h6>
                 <div className="d-flex flex-column gap-1 text-dark">
                   <span><strong>Nº Documento:</strong> {selectedVoucher.voucher_number || '-'}</span>
-                  {/* Arreglado el problema de zona horaria aquí también */}
                   <span><strong>Fecha:</strong> {selectedVoucher.voucher_date ? formatSafeDate(selectedVoucher.voucher_date) : '-'}</span>
                   <span><strong>Empresa:</strong> {selectedVoucher.companies?.name || 'No detectada'}</span>
                 </div>

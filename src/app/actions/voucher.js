@@ -7,7 +7,6 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai'
 import { revalidatePath } from 'next/cache'
 import { logAuditAction } from '@/app/actions/logs'
 
-// ✨ Función segura para generar el cliente en Railway
 const getDocumentAiClient = () => {
   return new DocumentProcessorServiceClient({
     projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
@@ -16,6 +15,23 @@ const getDocumentAiClient = () => {
       private_key: process.env.GCP_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     }
   })
+}
+
+const cleanText = (str) => {
+  return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+}
+
+const GLOBAL_ALIAS_MAP = {
+  'RBU': ['redbus', 'red bus', 'red_bus'],
+  'REDSUPPORT': ['red support', 'red_support'],
+  'AGUNSA': ['agunsa_aeropuerto', 'agunsa_ae', 'agunsa_aer'],
+  'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue', 'acciona_aeropuerto'],
+  'LATAM': [
+    'latam',
+    'trip_aeropuerto', 'trip_aero', 'trip_aerop', 'tripulacion',
+    'base aerof', 'base aerop', 'base aerot', 'base', 'base aeropuerto'
+  ],
+  'SODEXO': ['sodexo', 'lab mintlab', 'lab mintl', 'lab mintla']
 }
 
 export async function submitVoucher(formData) {
@@ -65,7 +81,6 @@ export async function submitVoucher(formData) {
   }
 
   const compressedFile = files[0]
-  // Obtenemos la original si existe; si no, usamos la comprimida por seguridad
   const highResFile = formData.get('highResImage') || compressedFile
 
   if (!compressedFile.type.startsWith('image/')) {
@@ -77,7 +92,6 @@ export async function submitVoucher(formData) {
   const fileName = `${voucherId}.${ext}`
   const filePath = `vouchers/${fileName}`
 
-  // 1. Subimos solo la versión LIVIANA a Supabase
   const { error: uploadError } = await supabase.storage
     .from('vancheck-bucket')
     .upload(filePath, compressedFile)
@@ -86,7 +100,6 @@ export async function submitVoucher(formData) {
     throw new Error('No se pudo subir la imagen al bucket')
   }
 
-  // 2. Preparamos la versión PESADA original para Google
   const arrayBuffer = await highResFile.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
   const encodedImage = buffer.toString('base64')
@@ -136,27 +149,10 @@ export async function submitVoucher(formData) {
   const companies = await prisma.companies.findMany()
   let companyId = null
 
-  const cleanText = (str) => {
-    return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
-  }
-
   const ocrLimpio = cleanText(text)
 
-  const aliasMap = {
-    'RBU': ['redbus', 'red bus', 'red_bus'],
-    'REDSUPPORT': ['red support', 'red_support'],
-    'AGUNSA': ['agunsa_aeropuerto', 'agunsa_ae', 'agunsa_aer'],
-    'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue', 'acciona_aeropuerto'],
-    'LATAM': [
-      'latam',
-      'trip_aeropuerto', 'trip_aero', 'trip_aerop', 'tripulacion',
-      'base aerof', 'base aerop', 'base aerot', 'base', 'base aeropuerto'
-    ],
-    'SODEXO': ['sodexo', 'lab mintlab', 'lab mintl', 'lab mintla']
-  }
-
   for (const comp of companies) {
-    const palabrasABuscar = aliasMap[comp.name] || [cleanText(comp.name)]
+    const palabrasABuscar = GLOBAL_ALIAS_MAP[comp.name] || [cleanText(comp.name)]
     if (palabrasABuscar.some(alias => ocrLimpio.includes(alias))) {
       companyId = comp.id
       break
@@ -308,13 +304,11 @@ export async function processSingleMassiveVoucher(formData) {
   const ext = compressedFile.name.split('.').pop()
   const filePath = `vouchers/${voucherId}.${ext}`
 
-  // 1. Subimos la versión LIVIANA a Supabase
   const { error: uploadError } = await supabase.storage
     .from('vancheck-bucket')
     .upload(filePath, compressedFile)
   if (uploadError) throw new Error('Error al subir imagen')
 
-  // 2. Preparamos la versión PESADA para Google
   const arrayBuffer = await highResFile.arrayBuffer()
   const encodedImage = Buffer.from(arrayBuffer).toString('base64')
 
@@ -344,19 +338,10 @@ export async function processSingleMassiveVoucher(formData) {
   const companies = await prisma.companies.findMany()
   let companyId = companies[0]?.id 
 
-  const cleanText = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   const ocrLimpio = cleanText(text)
 
-  const aliasMap = {
-    'RBU': ['redbus', 'red bus', 'red_bus'],
-    'REDSUPPORT': ['red support', 'red_support'],
-    'AGUNSA': ['agunsa_aeropuerto', 'agunsa_ae', 'agunsa_aer'],
-    'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue'],
-    'LATAM': ['trip_aeropuerto', 'trip_aero', 'trip_aerop', 'base aerof', 'base aerop', 'base aerot', 'base', 'tripulacion', 'base aeropuerto', 'latam'],
-  }
-
   for (const comp of companies) {
-    const palabrasABuscar = aliasMap[comp.name] || [cleanText(comp.name)]
+    const palabrasABuscar = GLOBAL_ALIAS_MAP[comp.name] || [cleanText(comp.name)]
     if (palabrasABuscar.some(alias => ocrLimpio.includes(alias))) {
       companyId = comp.id
       break

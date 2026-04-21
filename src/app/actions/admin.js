@@ -4,16 +4,30 @@ import prisma from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
-export async function getPendingVouchers(page = 1) {
+export async function getPendingVouchers(page = 1, filters = {}) {
   const take = 50
   const skip = (page - 1) * take
 
-  // Buscamos los que tengan imagen y que NO estén verificados (solo false, ya no buscamos null)
+  const { search, companyId, userId } = filters
+
+  // Armamos el WHERE dinámico
+  const where = {
+    file_path: { not: null },
+    is_verified: false
+  }
+
+  if (search) {
+    where.voucher_number = { contains: search, mode: 'insensitive' }
+  }
+  if (companyId) {
+    where.voucher_company_id = companyId
+  }
+  if (userId) {
+    where.user_id = userId
+  }
+
   const vouchers = await prisma.vouchers.findMany({
-    where: {
-      file_path: { not: null },
-      is_verified: false // <-- Aquí está el arreglo
-    },
+    where,
     take,
     skip,
     orderBy: { created_at: 'desc' },
@@ -21,19 +35,45 @@ export async function getPendingVouchers(page = 1) {
   })
 
   const total = await prisma.vouchers.count({
-    where: {
-      file_path: { not: null },
-      is_verified: false // <-- Y aquí también
-    }
+    where
   })
 
   return { vouchers, total }
 }
 
-export async function getCompanies() {
-  return await prisma.companies.findMany({
+// ✨ NUEVA FUNCIÓN: Trae la data de los filtros al tiro
+export async function getAdminFiltersData() {
+  // Traemos las empresas con el contador de vouchers pendientes
+  const companies = await prisma.companies.findMany({
+    orderBy: { name: 'asc' },
+    include: {
+      _count: {
+        select: {
+          vouchers: {
+            where: { file_path: { not: null }, is_verified: false }
+          }
+        }
+      }
+    }
+  })
+
+  // Traemos a los usuarios que tengan al menos 1 voucher pendiente para no llenar el select de basura
+  const users = await prisma.users.findMany({
+    where: {
+      vouchers: {
+        some: { file_path: { not: null }, is_verified: false }
+      }
+    },
+    select: {
+      id: true,
+      name: true,
+      last_name: true,
+      rut: true
+    },
     orderBy: { name: 'asc' }
   })
+
+  return { companies, users }
 }
 
 export async function verifyVoucher(voucherId, data) {
