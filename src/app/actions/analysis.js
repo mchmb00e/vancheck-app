@@ -168,12 +168,22 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
         const dateIndex = line.tokens.findIndex(t => t.text.match(/\d{2}[-\/]\d{2}[-\/]\d{4}/))
         const fecha = dateIndex !== -1 ? line.tokens[dateIndex].text : "Sin fecha"
         
-        let id_viaje = line.tokens[0].text
-        if (!id_viaje.match(/\d/)) continue 
+        // ✨ LA MAGIA NUEVA: Juntamos todo el texto de la línea para buscar IDs
+        const textoFilaCompleto = line.tokens.map(t => t.text).join(' ');
+        
+        // Expresión regular: busca de 6 a 8 números, un guión, y 1 o 2 números (ej: 2726504-5 o 2687562-18)
+        const idRegex = /\b\d{6,8}-\d{1,2}\b/g;
+        const matches = [...textoFilaCompleto.matchAll(idRegex)];
 
+        // Si no hay nada que parezca un ID en esta fila, seguimos con la siguiente
+        if (matches.length === 0) continue; 
+
+        // Extraemos todos los IDs que la Regex pilló en esta fila
+        const idsEncontrados = matches.map(m => m[0]);
+
+        // Buscamos el monto igual que antes
         let montoToken = null
         let montoText = "0" 
-        
         let searchStart = dateIndex !== -1 ? dateIndex + 1 : 1;
         
         for (let k = searchStart; k < line.tokens.length; k++) {
@@ -186,6 +196,7 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
           }
         }
 
+        // Buscamos a qué empresa (mundo) corresponde
         let mundoName = null
         let mundoId = null
         if (montoToken && pageHeaders.length > 0) {
@@ -201,9 +212,21 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
           mundoName = closestHeader.name
           mundoId = closestHeader.companyId
         }
-        extractedData.push({ id_viaje, fecha, monto: montoText, mundo: mundoName, mundo_id: mundoId })
+
+        // ✨ NUEVO: Guardamos un registro por CADA ID que hayamos encontrado en la línea.
+        // Así, si Document AI juntó 3 IDs en la misma fila, guardamos los 3.
+        for (const id_viaje of idsEncontrados) {
+          extractedData.push({ 
+            id_viaje: id_viaje, 
+            fecha, 
+            monto: montoText, 
+            mundo: mundoName, 
+            mundo_id: mundoId 
+          });
+        }
       }
     }
+
 
     for (let i = 0; i < extractedData.length; i++) {
       if (!extractedData[i].mundo) {
@@ -221,17 +244,53 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
       }
     }
 
+    // ✨ NUEVO: Función para limpiar IDs (respeta los guiones que vienen en tu planilla)
+    const limpiarId = (id) => {
+      if (id === null || id === undefined) return '';
+      return String(id).trim().toLowerCase();
+    };
+
+
     extractedData.forEach(item => {
       item.monto = parseInt(item.monto.replace(/\./g, ''), 10) || 0
-      item.hubo_match = !!userVouchers.find(v => v.voucher_number === item.id_viaje)
+      
+      const idPdfLimpio = limpiarId(item.id_viaje);
+      
+      item.hubo_match = !!userVouchers.find(v => {
+        const idBdLimpio = limpiarId(v.voucher_number);
+        
+        
+        return idBdLimpio === idPdfLimpio;
+      })
     })
 
     const matched = extractedData.filter(item => item.hubo_match)
-    const missingInPlanilla = userVouchers.filter(v => !extractedData.some(item => item.id_viaje === v.voucher_number))
+    
+    // 1. Buscamos los que faltan en la planilla (aquí pueden venir repetidos si el usuario subió el mismo varias veces)
+    const missingInPlanillaBruto = userVouchers.filter(v => {
+      const idBdLimpio = limpiarId(v.voucher_number);
+      return !extractedData.some(item => limpiarId(item.id_viaje) === idBdLimpio);
+    })
+
+    // ✨ 2. NUEVO: Pasamos el filtro VIP para eliminar los duplicados
+    const idsVistos = new Set();
+    const missingInPlanilla = missingInPlanillaBruto.filter(v => {
+      const idLimpio = limpiarId(v.voucher_number);
+      
+      // Si ya vimos este ID antes, lo pateamos (false)
+      if (idsVistos.has(idLimpio)) {
+        return false; 
+      } 
+      
+      // Si es nuevecito, lo anotamos en la lista VIP y lo dejamos pasar (true)
+      idsVistos.add(idLimpio);
+      return true;
+    });
+    
     const missingInProfile = extractedData.filter(item => !item.hubo_match)
+
     const execTimeSeconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(2))
 
-    // Guardamos si se analizó un vehículo en particular para mostrarlo después
     let analyzedVehicle = null
     if (vehicleId) {
       analyzedVehicle = await prisma.vehicles.findUnique({ where: { id: vehicleId } })
@@ -247,7 +306,7 @@ export async function processSpreadsheetAnalysis(spreadsheetId, companyDates, st
         end_page: loopEnd,
         error_count: missingInPlanilla.length,
         exec_time: execTimeSeconds,
-        vehicle_id: vehicleId // Lo guardamos en la tabla de análisis también si lo tienes en el schema
+        vehicle_id: vehicleId 
       }
     })
 
@@ -308,21 +367,18 @@ export async function generateUnpaidVouchersPdf(missingVouchersIds) {
   if (!user) throw new Error('No autorizado')
 
   try {
-    // 1. Buscar los vouchers completos en la BD
     const vouchers = await prisma.vouchers.findMany({
       where: { 
         user_id: user.id,
         id: { in: missingVouchersIds },
-        file_path: { not: null } // Solo los que tienen foto
+        file_path: { not: null } 
       }
     })
 
     if (vouchers.length === 0) throw new Error('No hay vouchers con imagen para descargar.')
 
-    // 2. Crear un nuevo PDF en blanco
     const pdfDoc = await PDFDocument.create()
 
-    // 3. Procesar cada voucher y agregarlo como página
     for (const voucher of vouchers) {
       const { data: fileData, error } = await supabase.storage
         .from('vancheck-bucket')
@@ -334,21 +390,16 @@ export async function generateUnpaidVouchersPdf(missingVouchersIds) {
       
       let image;
       try {
-        // ✨ EL TRUCO: Ignoramos la extensión. 
-        // Intentamos forzarlo como JPG (la mayoría terminan así tras comprimirse)
         try {
           image = await pdfDoc.embedJpg(imageBuffer)
         } catch (jpgErr) {
-          // Si explota como JPG, le damos la chance de que sea PNG
           image = await pdfDoc.embedPng(imageBuffer)
         }
       } catch (e) {
-        // Si no es ni JPG ni PNG real (ej. un HEIC de iPhone sin comprimir), nos lo saltamos
         console.error(`Formato no soportado o archivo corrupto para el voucher ${voucher.id}:`, e)
         continue; 
       }
 
-      // Escalar la imagen para que quepa en una página A4 estándar
       const page = pdfDoc.addPage()
       const { width, height } = page.getSize()
       const imgDims = image.scaleToFit(width - 100, height - 100)
@@ -360,7 +411,6 @@ export async function generateUnpaidVouchersPdf(missingVouchersIds) {
         height: imgDims.height,
       })
 
-      // Agregar un texto con el ID del voucher arriba
       page.drawText(`Voucher ID: ${voucher.voucher_number}`, {
         x: 50,
         y: height - 50,
@@ -372,7 +422,6 @@ export async function generateUnpaidVouchersPdf(missingVouchersIds) {
       throw new Error('No se pudo procesar ninguna imagen. Es posible que estén en un formato no soportado (ej: HEIC, WEBP).')
     }
 
-    // 4. Guardar y codificar en Base64 para enviarlo al cliente
     const pdfBytes = await pdfDoc.save()
     const base64Pdf = Buffer.from(pdfBytes).toString('base64')
     

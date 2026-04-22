@@ -3,7 +3,8 @@ export const runtime = 'nodejs'
 import Link from 'next/link'
 import {
   Check2Square,
-  ArrowLeft
+  ArrowLeft,
+  Person
 } from 'react-bootstrap-icons'
 
 export const metadata = {
@@ -56,6 +57,12 @@ export default function AdminDashboardPage() {
             description="Entrenamiento bruto de inteligencia artificial."
             path="/dashboard/admin/voucher-verify"
             icon={<Check2Square className="text-black" size={24} />}
+          />
+          <Item
+            title="Gestionar usuarios"
+            description="Habilitar usuarios en la plataforma."
+            path="/dashboard/admin/user-controller"
+            icon={<Person className="text-black" size={24} />}
           />
         </div>
 
