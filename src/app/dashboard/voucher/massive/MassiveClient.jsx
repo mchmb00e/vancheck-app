@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { processSingleMassiveVoucher, confirmMassiveBatch } from '@/app/actions/voucher'
 import imageCompression from 'browser-image-compression' 
-import { Eye, Trash, ExclamationTriangleFill, Stopwatch } from 'react-bootstrap-icons'
+import { Eye, Trash, ExclamationTriangleFill, Stopwatch, CalendarCheck, CursorText } from 'react-bootstrap-icons'
 
 export default function MassiveClient({ companies, vehicles }) {
   const router = useRouter()
@@ -19,6 +19,7 @@ export default function MassiveClient({ companies, vehicles }) {
   const [progress, setProgress] = useState(0)
   const [processedResults, setProcessedResults] = useState([])
   const [isSaving, setIsSaving] = useState(false)
+  const [currentIncompleteIndex, setCurrentIncompleteIndex] = useState(-1)
   
   const MAX_FILES = 300
   const CONCURRENCY_LIMIT = 5 
@@ -83,7 +84,7 @@ export default function MassiveClient({ companies, vehicles }) {
             }
             compressedFile = await imageCompression(item.file, options)
           } catch (compErr) {
-            console.error('Error al comprimir, subiendo original:', compErr)
+            console.error(compErr)
           }
 
           const formData = new FormData()
@@ -105,7 +106,6 @@ export default function MassiveClient({ companies, vehicles }) {
             })
           }
         } catch (error) {
-          console.error(`Error procesando ${item.file.name}:`, error)
           results.push({
             localId: item.id,
             preview: item.preview,
@@ -126,12 +126,60 @@ export default function MassiveClient({ companies, vehicles }) {
     
     setProcessedResults(results)
     setStep('REVIEW')
+    setCurrentIncompleteIndex(-1)
   }
 
   const handleResultChange = (localId, field, value) => {
     setProcessedResults(prev => prev.map(item => 
       item.localId === localId ? { ...item, [field]: value } : item
     ))
+  }
+
+  const handleFillDates = () => {
+    setProcessedResults(prev => {
+      const newData = [...prev]
+      for (let i = 0; i < newData.length; i++) {
+        if (!newData[i].extractedDate) {
+          let foundDate = ''
+          if (i > 0 && newData[i - 1].extractedDate) {
+            foundDate = newData[i - 1].extractedDate
+          } else {
+            for (let j = i + 1; j < newData.length; j++) {
+              if (newData[j].extractedDate) {
+                foundDate = newData[j].extractedDate
+                break
+              }
+            }
+          }
+          newData[i] = { ...newData[i], extractedDate: foundDate }
+        }
+      }
+      return newData
+    })
+  }
+
+  const handleNextIncompleteId = () => {
+    const emptyIndices = processedResults
+      .map((res, idx) => (!res.extractedId ? idx : -1))
+      .filter(idx => idx !== -1)
+
+    if (emptyIndices.length === 0) {
+      alert("¡Están todos los IDs completos!")
+      return
+    }
+
+    const nextIndex = emptyIndices.find(idx => idx > currentIncompleteIndex) ?? emptyIndices[0]
+    setCurrentIncompleteIndex(nextIndex)
+
+    const elementId = `voucher-${processedResults[nextIndex].localId}`
+    const element = document.getElementById(elementId)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const input = element.querySelector('input[type="text"]')
+      if (input) {
+        setTimeout(() => input.focus(), 500)
+      }
+    }
   }
 
   const handleFinalSave = async () => {
@@ -286,13 +334,30 @@ export default function MassiveClient({ companies, vehicles }) {
 
       {step === 'REVIEW' && (
         <section className="fade-in">
-          <div className="alert alert-success">
+          <div className="alert alert-success mb-3">
             <strong>¡Extracción completada!</strong> Revisa y corrige los datos si es necesario antes de guardarlos.
           </div>
           
+          <div className="d-flex flex-wrap gap-2 mb-3">
+            <button 
+              onClick={handleFillDates} 
+              className="btn btn-warning shadow-sm fw-medium d-flex align-items-center gap-2"
+            >
+              <CalendarCheck size={18} />
+              Rellenar fechas
+            </button>
+            <button 
+              onClick={handleNextIncompleteId} 
+              className="btn btn-danger shadow-sm fw-medium d-flex align-items-center gap-2"
+            >
+              <CursorText size={18} />
+              Ir al siguiente ID incompleto
+            </button>
+          </div>
+
           <div className="table-responsive shadow-sm rounded border bg-white mb-4" style={{ maxHeight: '600px' }}>
             <table className="table table-hover align-middle mb-0" style={{ minWidth: '950px' }}>
-              <thead className="table-light sticky-top">
+              <thead className="table-light sticky-top" style={{ zIndex: 1 }}>
                 <tr>
                   <th scope="col" className="px-3" style={{ width: '5%' }}>#</th>
                   <th scope="col" style={{ width: '10%' }}>Imagen</th>
@@ -304,7 +369,7 @@ export default function MassiveClient({ companies, vehicles }) {
               </thead>
               <tbody>
                 {processedResults.map((res, index) => (
-                  <tr key={res.localId}>
+                  <tr key={res.localId} id={`voucher-${res.localId}`}>
                     <td className="px-3 fw-bold text-muted">{index + 1}</td>
                     <td>
                       <img 

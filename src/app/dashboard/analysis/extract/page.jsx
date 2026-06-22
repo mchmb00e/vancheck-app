@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, EyeSlash, FileEarmarkPdfFill, Download, FileEarmarkSpreadsheetFill } from 'react-bootstrap-icons'
 import { submitAnalysisFeedback, getSpreadsheetUrl, generateUnpaidVouchersPdf } from '@/app/actions/analysis' 
 import { getVoucherImageUrl } from '@/app/actions/voucher' 
-import * as XLSX from 'xlsx' 
+import * as XLSX from 'xlsx-js-style' 
 
 export default function ExtractViewPage() {
   const [analisis, setAnalisis] = useState(null)
@@ -123,7 +123,7 @@ export default function ExtractViewPage() {
     }
   }
 
-const handleExportExcel = () => {
+  const handleExportExcel = () => {
     if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
 
     const activeVouchers = analisis.missingInPlanilla.filter(v => !excludedIds.includes(v.id))
@@ -162,11 +162,46 @@ const handleExportExcel = () => {
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport, { skipHeader: true })
 
+    const headerStyle = {
+      font: { bold: true },
+      fill: { fgColor: { rgb: "FFFFFF00" } }
+    }
+
+    const cellsToStyle = ['A1', 'B1', 'C1', 'A2', 'B2', 'C2']
+    cellsToStyle.forEach(cellRef => {
+      if (worksheet[cellRef]) {
+        worksheet[cellRef].s = headerStyle
+      }
+    })
+
+    // 1. Definimos los bordes delgados para todos los lados
+    const thinBorder = {
+      top: { style: "thin", color: { rgb: "000000" } },
+      bottom: { style: "thin", color: { rgb: "000000" } },
+      left: { style: "thin", color: { rgb: "000000" } },
+      right: { style: "thin", color: { rgb: "000000" } }
+    }
+
+    // 2. Recorremos todas las celdas que tienen datos en la hoja
+    Object.keys(worksheet).forEach(cellRef => {
+      // Nos saltamos las llaves de configuración de la hoja (que empiezan con !)
+      if (cellRef.startsWith('!')) return
+
+      if (worksheet[cellRef]) {
+        // Inicializamos el objeto de estilo si no existe
+        worksheet[cellRef].s = worksheet[cellRef].s || {}
+        // Le plantamos los bordes
+        worksheet[cellRef].s.border = thinBorder
+      }
+    })
+
     worksheet['!cols'] = [
       { wch: 25 }, 
       { wch: 15 }, 
       { wch: 25 }  
     ]
+
+
 
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, "Vouchers No Pagados")
