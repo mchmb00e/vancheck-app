@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, FileEarmarkPdfFill, Download, FileEarmarkSpreadsheetFill } from 'react-bootstrap-icons'
+import { ArrowLeftCircle, CheckCircleFill, ExclamationTriangleFill, InfoCircleFill, HandThumbsUp, HandThumbsDown, Eye, EyeSlash, FileEarmarkPdfFill, Download, FileEarmarkSpreadsheetFill } from 'react-bootstrap-icons'
 import { submitAnalysisFeedback, getSpreadsheetUrl, generateUnpaidVouchersPdf } from '@/app/actions/analysis' 
 import { getVoucherImageUrl } from '@/app/actions/voucher' 
 import * as XLSX from 'xlsx' 
@@ -12,6 +12,7 @@ export default function ExtractViewPage() {
   const [loading, setLoading] = useState(true)
   const [feedbackStatus, setFeedbackStatus] = useState('pending')
   const [imageLoadingId, setImageLoadingId] = useState(null)
+  const [excludedIds, setExcludedIds] = useState([])
   
   const [isOpeningSpreadsheet, setIsOpeningSpreadsheet] = useState(false)
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false)
@@ -52,6 +53,12 @@ export default function ExtractViewPage() {
     }
   }
 
+  const handleToggleExclude = (id) => {
+    setExcludedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
   const handleOpenSpreadsheet = async () => {
     if (!analisis?.spreadsheetId) {
       alert("No se encontró la referencia a la planilla.")
@@ -72,9 +79,15 @@ export default function ExtractViewPage() {
   const handleDownloadUnpaidPdf = async () => {
     if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
     
+    const activeVouchers = analisis.missingInPlanilla.filter(v => !excludedIds.includes(v.id))
+    if (activeVouchers.length === 0) {
+      alert("No hay vouchers activos para generar el PDF.")
+      return
+    }
+
     setIsDownloadingPdf(true)
     try {
-      const missingIds = analisis.missingInPlanilla.map(v => v.id)
+      const missingIds = activeVouchers.map(v => v.id)
       const response = await generateUnpaidVouchersPdf(missingIds)
       
       if (!response.success) {
@@ -89,9 +102,16 @@ export default function ExtractViewPage() {
       const byteArray = new Uint8Array(byteNumbers)
       const blob = new Blob([byteArray], { type: 'application/pdf' })
       
+      const vehiclePatent = analisis.analyzedVehicle?.patent || 'N/A'
+      const firstDate = activeVouchers[0]?.voucher_date
+      const dateObj = firstDate ? new Date(firstDate) : new Date()
+      const monthStr = dateObj.toLocaleDateString('es-CL', { month: 'long', timeZone: 'UTC' }).toLowerCase()
+      const yearStr = dateObj.toLocaleDateString('es-CL', { year: 'numeric', timeZone: 'UTC' })
+      const patentStr = vehiclePatent.replace(/[^a-zA-Z0-9]/g, '')
+
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
-      link.download = `Vouchers_Faltantes_${new Date().toLocaleDateString('es-CL').replace(/\//g, '-')}.pdf`
+      link.download = `${patentStr}_${monthStr}_${yearStr}.pdf`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -103,19 +123,47 @@ export default function ExtractViewPage() {
     }
   }
 
-  const handleExportExcel = () => {
+const handleExportExcel = () => {
     if (!analisis?.missingInPlanilla || analisis.missingInPlanilla.length === 0) return
 
-    const dataToExport = analisis.missingInPlanilla.map(v => ({
-      'ID': v.voucher_number,
-      'FECHA': new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' }),
-      'MUNDO': v.companies?.name || 'Sin mundo' 
-    }))
+    const activeVouchers = analisis.missingInPlanilla.filter(v => !excludedIds.includes(v.id))
+    if (activeVouchers.length === 0) {
+      alert("No hay vouchers activos para exportar.")
+      return
+    }
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport)
+    const vehicleName = analisis.analyzedVehicle?.name || 'Todos los vehículos'
+    const vehiclePatent = analisis.analyzedVehicle?.patent || 'N/A'
+    const firstDate = activeVouchers[0]?.voucher_date
+    const dateObj = firstDate ? new Date(firstDate) : new Date()
+    const monthStr = dateObj.toLocaleDateString('es-CL', { month: 'long', timeZone: 'UTC' }).toLowerCase()
+    const yearStr = dateObj.toLocaleDateString('es-CL', { year: 'numeric', timeZone: 'UTC' })
+    const monthYear = firstDate 
+      ? dateObj.toLocaleDateString('es-CL', { month: 'long', year: 'numeric', timeZone: 'UTC' }) 
+      : 'Mes no definido'
+
+    const dataToExport = [
+      {
+        'ID': vehicleName,
+        'FECHA': vehiclePatent,
+        'MUNDO': monthYear
+      },
+      {
+        'ID': 'ID Viaje',
+        'FECHA': 'Fecha',
+        'MUNDO': 'Mundo'
+      },
+      ...activeVouchers.map(v => ({
+        'ID': v.voucher_number,
+        'FECHA': new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' }),
+        'MUNDO': v.companies?.name || 'Sin mundo' 
+      }))
+    ]
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport, { skipHeader: true })
 
     worksheet['!cols'] = [
-      { wch: 15 }, 
+      { wch: 25 }, 
       { wch: 15 }, 
       { wch: 25 }  
     ]
@@ -123,7 +171,8 @@ export default function ExtractViewPage() {
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, "Vouchers No Pagados")
 
-    const fileName = `Detalle_Faltantes_${new Date().toLocaleDateString('es-CL').replace(/\//g, '-')}.xlsx`
+    const patentStr = vehiclePatent.replace(/[^a-zA-Z0-9]/g, '')
+    const fileName = `${patentStr}_${monthStr}_${yearStr}.xlsx`
     XLSX.writeFile(workbook, fileName)
   }
 
@@ -155,7 +204,6 @@ export default function ExtractViewPage() {
         </Link>
       </header>
 
-      {/* ✨ RECUADRO INFORMATIVO DEL VEHÍCULO ANALIZADO */}
       <div className="alert alert-secondary border-0 shadow-sm mb-3 d-flex align-items-center gap-3 animate__animated animate__fadeIn">
         <InfoCircleFill size={24} className="text-secondary flex-shrink-0" />
         <div className="fs-6">
@@ -164,7 +212,6 @@ export default function ExtractViewPage() {
         </div>
       </div>
 
-      {/* ✨ NUEVO RECUADRO DE ADVERTENCIA IA */}
       <div className="alert alert-warning border-0 shadow-sm mb-4 d-flex align-items-start gap-3 animate__animated animate__fadeIn">
         <ExclamationTriangleFill size={24} className="text-warning flex-shrink-0 mt-1" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.2))' }} />
         <div className="fs-6 text-dark">
@@ -251,42 +298,53 @@ export default function ExtractViewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {analisis.missingInPlanilla.map((v, i) => (
-                      <tr key={i}>
-                        <td className="fw-bold text-danger">{v.voucher_number}</td>
-                        <td>{new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}</td>
-                        <td>
-                          <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary-subtle">
-                            {v.companies?.name || 'Sin mundo'}
-                          </span>
-                        </td>
-                        <td>
-                          {v.file_path ? (
-                            <button 
-                              onClick={() => handleViewVoucher(v.id, v.file_path)}
-                              disabled={imageLoadingId === v.id}
-                              className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2"
-                            >
-                              {imageLoadingId === v.id ? (
-                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    {analisis.missingInPlanilla.map((v, i) => {
+                      const isExcluded = excludedIds.includes(v.id)
+                      return (
+                        <tr key={i} className={isExcluded ? 'opacity-50' : ''}>
+                          <td className={`fw-bold ${isExcluded ? 'text-secondary' : 'text-danger'}`}>
+                            {isExcluded ? <del>{v.voucher_number}</del> : v.voucher_number}
+                          </td>
+                          <td>{new Date(v.voucher_date).toLocaleDateString('es-CL', { timeZone: 'UTC' })}</td>
+                          <td>
+                            <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary-subtle">
+                              {v.companies?.name || 'Sin mundo'}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="d-flex flex-wrap gap-2">
+                              {v.file_path ? (
+                                <button 
+                                  onClick={() => handleViewVoucher(v.id, v.file_path)}
+                                  disabled={imageLoadingId === v.id}
+                                  className="btn btn-sm btn-outline-primary d-flex align-items-center gap-2"
+                                >
+                                  {imageLoadingId === v.id ? (
+                                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                  ) : (
+                                    <Eye size={16} />
+                                  )}
+                                  Ver
+                                </button>
                               ) : (
-                                <Eye size={16} />
+                                <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2" disabled>
+                                  <Eye size={16} /> Sin imagen
+                                </button>
                               )}
-                              Ver voucher
-                            </button>
-                          ) : (
-                            <div className="d-flex align-items-center gap-2">
-                              <button className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2" disabled>
-                                <Eye size={16} /> Ver voucher
+                              
+                              <button 
+                                onClick={() => handleToggleExclude(v.id)}
+                                className={`btn btn-sm d-flex align-items-center gap-2 ${isExcluded ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                                title={isExcluded ? 'Incluir voucher' : 'Excluir voucher'}
+                              >
+                                {isExcluded ? <EyeSlash size={16} /> : <Eye size={16} />}
+                                {isExcluded ? 'Excluido' : 'Activo'}
                               </button>
-                              <small className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                Sin imagen
-                              </small>
                             </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
