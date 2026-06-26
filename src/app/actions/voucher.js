@@ -22,7 +22,7 @@ const cleanText = (str) => {
 }
 
 const GLOBAL_ALIAS_MAP = {
-  'RBU': ['redbus', 'red bus', 'red_bus'],
+  'RBU': ['redbus', 'red bus', 'red_bus', 'lo echevers', 'echevers'],
   'REDSUPPORT': ['red support', 'red_support'],
   'AGUNSA': ['agunsa_aeropuerto', 'agunsa_ae', 'agunsa_aer'],
   'ACCIONA': ['acciona_corporativo', 'acciona_rampa', 'acciona', 'acciona_aeropue', 'acciona_aeropuerto'],
