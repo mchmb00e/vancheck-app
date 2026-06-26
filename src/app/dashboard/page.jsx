@@ -48,6 +48,15 @@ function Item({ title, description, path, disabled, icon }) {
 }
 
 export default async function DashboardPage({ searchParams }) {
+
+  const aviso = <div className="alert alert-info mb-4 shadow-sm" role="alert">
+        <p className="m-0">
+          <strong>{"Aviso: "}</strong>{' Los vouchers con ID '}<b>{"CARGA-XX"}</b>{ " (Con X siendo un número) están presentando problemas a la hora de analizar planillas de liquidaciones de sueldo."}
+          <br /><br />
+          {"Es posible que aparezcan como vouchers no pagados cuando si lo están. Se está trabajando en solucionar este problema."}
+        </p>
+      </div>
+
   const params = await searchParams
   const message = params?.message
 
@@ -91,6 +100,10 @@ export default async function DashboardPage({ searchParams }) {
           Bienvenido, <span className="text-primary">{perfil?.name} {perfil?.last_name}</span>
         </h1>
       </header>
+
+      <div className="alert alert-info mb-4 shadow-sm" role="alert">
+        {aviso}
+      </div>
 
       <section>
         <h2 className="h3 mb-3 text-secondary">
